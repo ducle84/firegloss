@@ -49,6 +49,20 @@ ios/Runner/GoogleService-Info.plist
 macos/Runner/GoogleService-Info.plist
 windows/firebase_options.json
 
+# Python Backend
+firegloss_backend/__pycache__/
+firegloss_backend/*.py[cod]
+firegloss_backend/*$py.class
+firegloss_backend/.env
+firegloss_backend/.env.local
+firegloss_backend/venv/
+firegloss_backend/env/
+firegloss_backend/.venv/
+firegloss_backend/ENV/
+firegloss_backend/service-account-key.json
+firegloss_backend/*.json
+!firegloss_backend/requirements.txt
+
 # Python backend
 firegloss_backend/venv/
 firegloss_backend/__pycache__/
