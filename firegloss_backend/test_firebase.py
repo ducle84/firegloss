@@ -10,7 +10,16 @@ def test_firebase_connection():
     try:
         if not firebase_admin._apps:
             print("Attempting to connect to Firebase...")
-            app = firebase_admin.initialize_app()
+            
+            # Try to use service account file from .env
+            cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+            if cred_path and os.path.exists(cred_path):
+                print(f"Using credentials file: {cred_path}")
+                cred = credentials.Certificate(cred_path)
+                app = firebase_admin.initialize_app(cred)
+            else:
+                print("No credentials file found, using default credentials...")
+                app = firebase_admin.initialize_app()
         else:
             app = firebase_admin.get_app()
         

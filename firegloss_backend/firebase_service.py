@@ -24,23 +24,31 @@ class FirebaseService:
                 if cred_path and os.path.exists(cred_path):
                     cred = credentials.Certificate(cred_path)
                     self.app = firebase_admin.initialize_app(cred)
+                    self.db = firestore.client()
+                    print("Firebase initialized successfully with service account")
                 else:
-                    # Use default credentials (useful for Cloud Run/GCP)
-                    self.app = firebase_admin.initialize_app()
-                
-                self.db = firestore.client()
-                print("Firebase initialized successfully")
+                    # For development: create a mock app without real Firebase connection
+                    print("⚠️  Firebase service account not found - running in test mode")
+                    print("   To use Firebase: download service-account-key.json from Firebase Console")
+                    self.app = None
+                    self.db = None
+                    return
+                    
             else:
                 self.app = firebase_admin.get_app()
                 self.db = firestore.client()
                 print("Using existing Firebase app")
                 
         except Exception as e:
-            print(f"Error initializing Firebase: {e}")
-            raise e
+            print(f"⚠️  Firebase initialization failed: {e}")
+            print("   Server will run without Firebase connectivity")
+            self.app = None
+            self.db = None
     
     def create_user(self, user_data: dict) -> str:
         """Create a new user document"""
+        if not self.db:
+            raise Exception("Firebase not initialized - please set up credentials")
         try:
             doc_ref = self.db.collection('users').document()
             doc_ref.set(user_data)
@@ -51,6 +59,8 @@ class FirebaseService:
     
     def get_user(self, user_id: str) -> Optional[dict]:
         """Get a user document by ID"""
+        if not self.db:
+            raise Exception("Firebase not initialized - please set up credentials")
         try:
             doc_ref = self.db.collection('users').document(user_id)
             doc = doc_ref.get()
@@ -100,6 +110,8 @@ class FirebaseService:
     
     def create_document(self, collection_name: str, data: dict) -> str:
         """Create a document in any collection"""
+        if not self.db:
+            raise Exception("Firebase not initialized")
         try:
             doc_ref = self.db.collection(collection_name).document()
             doc_ref.set(data)
@@ -110,6 +122,8 @@ class FirebaseService:
     
     def get_document(self, collection_name: str, document_id: str) -> Optional[dict]:
         """Get a document from any collection"""
+        if not self.db:
+            raise Exception("Firebase not initialized")
         try:
             doc_ref = self.db.collection(collection_name).document(document_id)
             doc = doc_ref.get()
@@ -119,6 +133,46 @@ class FirebaseService:
             return None
         except Exception as e:
             print(f"Error getting document from {collection_name}: {e}")
+            raise e
+    
+    def get_all_documents(self, collection_name: str) -> list:
+        """Get all documents from any collection"""
+        if not self.db:
+            raise Exception("Firebase not initialized")
+        try:
+            docs = self.db.collection(collection_name).get()
+            documents = []
+            
+            for doc in docs:
+                doc_data = doc.to_dict()
+                doc_data['id'] = doc.id
+                documents.append(doc_data)
+            
+            return documents
+        except Exception as e:
+            print(f"Error getting documents from {collection_name}: {e}")
+            raise e
+    
+    def update_document(self, collection_name: str, document_id: str, data: dict) -> None:
+        """Update a document in any collection"""
+        if not self.db:
+            raise Exception("Firebase not initialized")
+        try:
+            doc_ref = self.db.collection(collection_name).document(document_id)
+            doc_ref.update(data)
+        except Exception as e:
+            print(f"Error updating document in {collection_name}: {e}")
+            raise e
+    
+    def delete_document(self, collection_name: str, document_id: str) -> None:
+        """Delete a document from any collection"""
+        if not self.db:
+            raise Exception("Firebase not initialized")
+        try:
+            doc_ref = self.db.collection(collection_name).document(document_id)
+            doc_ref.delete()
+        except Exception as e:
+            print(f"Error deleting document from {collection_name}: {e}")
             raise e
 
 # Create a singleton instance

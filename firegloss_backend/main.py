@@ -4,7 +4,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import datetime
 from firebase_service import firebase_service
-from models import UserCreate, UserUpdate, UserResponse, APIResponse
+from models import (
+    UserCreate, UserUpdate, UserResponse, APIResponse,
+    CompanyCreate, CompanyUpdate, EmployeeCreate, EmployeeUpdate,
+    CategoryCreate, CategoryUpdate, ItemCreate, ItemUpdate
+)
 
 app = FastAPI(
     title="FireGloss Backend API",
@@ -24,10 +28,25 @@ app.add_middleware(
 @app.get("/")
 async def health_check():
     """Health check endpoint"""
+    firebase_status = "connected" if firebase_service.db else "not connected"
     return {
         "status": "healthy",
         "message": "FireGloss Backend API is running",
+        "firebase_status": firebase_status,
         "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint that doesn't require Firebase"""
+    return {
+        "success": True,
+        "message": "Backend server is running successfully!",
+        "test_data": {
+            "server": "FastAPI",
+            "python_version": "3.x",
+            "timestamp": datetime.now().isoformat()
+        }
     }
 
 @app.post("/users", response_model=APIResponse)
@@ -135,6 +154,265 @@ async def get_all_users():
             success=True,
             message=f"Retrieved {len(users)} users",
             data={"users": users, "count": len(users)}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Company Endpoints
+@app.post("/companies", response_model=APIResponse)
+async def create_company(company: CompanyCreate):
+    """Create a new company"""
+    try:
+        company_data = {
+            **company.dict(),
+            "createdAt": datetime.now(),
+            "updatedAt": datetime.now()
+        }
+        
+        company_id = firebase_service.create_document("companies", company_data)
+        
+        return APIResponse(
+            success=True,
+            message="Company created successfully",
+            data={"id": company_id}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/companies", response_model=APIResponse)
+async def get_companies():
+    """Get all companies"""
+    try:
+        companies = firebase_service.get_all_documents("companies")
+        
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(companies)} companies",
+            data={"companies": companies, "count": len(companies)}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/companies/{company_id}", response_model=APIResponse)
+async def update_company(company_id: str, company_update: CompanyUpdate):
+    """Update company"""
+    try:
+        update_data = {k: v for k, v in company_update.dict().items() if v is not None}
+        update_data["updatedAt"] = datetime.now()
+        
+        firebase_service.update_document("companies", company_id, update_data)
+        
+        return APIResponse(
+            success=True,
+            message="Company updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/companies/{company_id}", response_model=APIResponse)
+async def delete_company(company_id: str):
+    """Delete company"""
+    try:
+        firebase_service.delete_document("companies", company_id)
+        
+        return APIResponse(
+            success=True,
+            message="Company deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Employee Endpoints
+@app.post("/employees", response_model=APIResponse)
+async def create_employee(employee: EmployeeCreate):
+    """Create a new employee"""
+    try:
+        employee_data = {
+            **employee.dict(),
+            "isActive": True,
+            "createdAt": datetime.now(),
+            "updatedAt": datetime.now()
+        }
+        
+        employee_id = firebase_service.create_document("employees", employee_data)
+        
+        return APIResponse(
+            success=True,
+            message="Employee created successfully",
+            data={"id": employee_id}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/employees", response_model=APIResponse)
+async def get_employees():
+    """Get all employees"""
+    try:
+        employees = firebase_service.get_all_documents("employees")
+        
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(employees)} employees",
+            data={"employees": employees, "count": len(employees)}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/employees/{employee_id}", response_model=APIResponse)
+async def update_employee(employee_id: str, employee_update: EmployeeUpdate):
+    """Update employee"""
+    try:
+        update_data = {k: v for k, v in employee_update.dict().items() if v is not None}
+        update_data["updatedAt"] = datetime.now()
+        
+        firebase_service.update_document("employees", employee_id, update_data)
+        
+        return APIResponse(
+            success=True,
+            message="Employee updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/employees/{employee_id}", response_model=APIResponse)
+async def delete_employee(employee_id: str):
+    """Delete employee"""
+    try:
+        firebase_service.delete_document("employees", employee_id)
+        
+        return APIResponse(
+            success=True,
+            message="Employee deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Item Category Endpoints
+@app.post("/categories", response_model=APIResponse)
+async def create_category(category: CategoryCreate):
+    """Create a new item category"""
+    try:
+        category_data = {
+            **category.dict(),
+            "isActive": True,
+            "createdAt": datetime.now(),
+            "updatedAt": datetime.now()
+        }
+        
+        category_id = firebase_service.create_document("item_categories", category_data)
+        
+        return APIResponse(
+            success=True,
+            message="Category created successfully",
+            data={"id": category_id}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/categories", response_model=APIResponse)
+async def get_categories():
+    """Get all item categories"""
+    try:
+        categories = firebase_service.get_all_documents("item_categories")
+        
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(categories)} categories",
+            data={"categories": categories, "count": len(categories)}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/categories/{category_id}", response_model=APIResponse)
+async def update_category(category_id: str, category_update: CategoryUpdate):
+    """Update category"""
+    try:
+        update_data = {k: v for k, v in category_update.dict().items() if v is not None}
+        update_data["updatedAt"] = datetime.now()
+        
+        firebase_service.update_document("item_categories", category_id, update_data)
+        
+        return APIResponse(
+            success=True,
+            message="Category updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/categories/{category_id}", response_model=APIResponse)
+async def delete_category(category_id: str):
+    """Delete category"""
+    try:
+        firebase_service.delete_document("item_categories", category_id)
+        
+        return APIResponse(
+            success=True,
+            message="Category deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Item Endpoints
+@app.post("/items", response_model=APIResponse)
+async def create_item(item: ItemCreate):
+    """Create a new item"""
+    try:
+        item_data = {
+            **item.dict(),
+            "isActive": True,
+            "createdAt": datetime.now(),
+            "updatedAt": datetime.now()
+        }
+        
+        item_id = firebase_service.create_document("items", item_data)
+        
+        return APIResponse(
+            success=True,
+            message="Item created successfully",
+            data={"id": item_id}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/items", response_model=APIResponse)
+async def get_items():
+    """Get all items"""
+    try:
+        items = firebase_service.get_all_documents("items")
+        
+        return APIResponse(
+            success=True,
+            message=f"Retrieved {len(items)} items",
+            data={"items": items, "count": len(items)}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/items/{item_id}", response_model=APIResponse)
+async def update_item(item_id: str, item_update: ItemUpdate):
+    """Update item"""
+    try:
+        update_data = {k: v for k, v in item_update.dict().items() if v is not None}
+        update_data["updatedAt"] = datetime.now()
+        
+        firebase_service.update_document("items", item_id, update_data)
+        
+        return APIResponse(
+            success=True,
+            message="Item updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/items/{item_id}", response_model=APIResponse)
+async def delete_item(item_id: str):
+    """Delete item"""
+    try:
+        firebase_service.delete_document("items", item_id)
+        
+        return APIResponse(
+            success=True,
+            message="Item deleted successfully"
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
