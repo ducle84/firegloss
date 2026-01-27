@@ -174,6 +174,57 @@ class FirebaseService:
         except Exception as e:
             print(f"Error deleting document from {collection_name}: {e}")
             raise e
+    
+    # Transaction-specific methods
+    def create_transaction(self, transaction_data: dict) -> str:
+        """Create a new transaction document"""
+        return self.create_document("transactions", transaction_data)
+    
+    def get_transaction(self, transaction_id: str) -> Optional[dict]:
+        """Get a transaction by ID"""
+        return self.get_document("transactions", transaction_id)
+    
+    def get_all_transactions(self) -> list:
+        """Get all transactions"""
+        return self.get_all_documents("transactions")
+    
+    def update_transaction(self, transaction_id: str, transaction_data: dict) -> None:
+        """Update a transaction"""
+        self.update_document("transactions", transaction_id, transaction_data)
+    
+    def delete_transaction(self, transaction_id: str) -> None:
+        """Delete a transaction"""
+        self.delete_document("transactions", transaction_id)
+    
+    # Transaction Lines methods
+    def create_transaction_line(self, line_data: dict) -> str:
+        """Create a new transaction line document"""
+        return self.create_document("transaction_lines", line_data)
+    
+    def get_transaction_lines(self, transaction_id: str) -> list:
+        """Get all transaction lines for a specific transaction"""
+        if not self.db:
+            raise Exception("Firebase not initialized")
+        try:
+            lines_ref = self.db.collection("transaction_lines").where("transactionId", "==", transaction_id)
+            docs = lines_ref.stream()
+            lines = []
+            for doc in docs:
+                line_data = doc.to_dict()
+                line_data['id'] = doc.id
+                lines.append(line_data)
+            return lines
+        except Exception as e:
+            print(f"Error getting transaction lines: {e}")
+            raise e
+    
+    def update_transaction_line(self, line_id: str, line_data: dict) -> None:
+        """Update a transaction line"""
+        self.update_document("transaction_lines", line_id, line_data)
+    
+    def delete_transaction_line(self, line_id: str) -> None:
+        """Delete a transaction line"""
+        self.delete_document("transaction_lines", line_id)
 
 # Create a singleton instance
 firebase_service = FirebaseService()

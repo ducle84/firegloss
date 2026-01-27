@@ -1,6 +1,15 @@
+import 'package:flutter/material.dart';
 import 'item.dart';
 
-enum TransactionStatus { pending, completed, cancelled, refunded }
+enum TransactionStatus {
+  newTransaction,
+  assigned,
+  inProgress,
+  onHold,
+  cancelled,
+  voided,
+  complete
+}
 
 enum PaymentMethod { cash, card, check, other }
 
@@ -53,6 +62,72 @@ class TransactionHeader {
   String get formattedDiscount => '\$${discount.toStringAsFixed(2)}';
   String get formattedTip => '\$${tip.toStringAsFixed(2)}';
 
+  String get statusDisplayName {
+    switch (status) {
+      case TransactionStatus.newTransaction:
+        return 'New';
+      case TransactionStatus.assigned:
+        return 'Assigned';
+      case TransactionStatus.inProgress:
+        return 'In Progress';
+      case TransactionStatus.onHold:
+        return 'On Hold';
+      case TransactionStatus.cancelled:
+        return 'Cancelled';
+      case TransactionStatus.voided:
+        return 'Voided';
+      case TransactionStatus.complete:
+        return 'Complete';
+    }
+  }
+
+  Color get statusColor {
+    switch (status) {
+      case TransactionStatus.newTransaction:
+        return Colors.blue;
+      case TransactionStatus.assigned:
+        return Colors.orange;
+      case TransactionStatus.inProgress:
+        return Colors.purple;
+      case TransactionStatus.onHold:
+        return Colors.amber;
+      case TransactionStatus.cancelled:
+        return Colors.red;
+      case TransactionStatus.voided:
+        return Colors.grey;
+      case TransactionStatus.complete:
+        return Colors.green;
+    }
+  }
+
+  Duration get timeSinceCreated {
+    return DateTime.now().difference(createdAt);
+  }
+
+  String get formattedDuration {
+    final duration = timeSinceCreated;
+    if (duration.inDays > 0) {
+      return '${duration.inDays}d ${duration.inHours % 24}h ${duration.inMinutes % 60}m';
+    } else if (duration.inHours > 0) {
+      return '${duration.inHours}h ${duration.inMinutes % 60}m';
+    } else {
+      return '${duration.inMinutes}m';
+    }
+  }
+
+  static TransactionStatus deriveStatus({
+    required bool hasPaid,
+    required bool hasItems,
+  }) {
+    if (hasPaid) {
+      return TransactionStatus.complete;
+    } else if (hasItems) {
+      return TransactionStatus.inProgress;
+    } else {
+      return TransactionStatus.newTransaction;
+    }
+  }
+
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -90,7 +165,7 @@ class TransactionHeader {
       employeeId: json['employeeId'],
       status: TransactionStatus.values.firstWhere(
         (e) => e.toString().split('.').last == json['status'],
-        orElse: () => TransactionStatus.pending,
+        orElse: () => TransactionStatus.newTransaction,
       ),
       paymentMethod: PaymentMethod.values.firstWhere(
         (e) => e.toString().split('.').last == json['paymentMethod'],
@@ -273,6 +348,34 @@ class Transaction {
       lines.where((line) => line.isService).toList();
   List<TransactionLine> get products =>
       lines.where((line) => line.isProduct).toList();
+
+  // Group transaction lines by technician
+  Map<String?, List<TransactionLine>> get linesByTechnician {
+    Map<String?, List<TransactionLine>> grouped = {};
+    for (var line in lines) {
+      String? techId = line.technicianId;
+      if (!grouped.containsKey(techId)) {
+        grouped[techId] = [];
+      }
+      grouped[techId]!.add(line);
+    }
+    return grouped;
+  }
+
+  // Get total for lines by technician
+  Map<String?, double> get totalsByTechnician {
+    Map<String?, double> totals = {};
+    for (var entry in linesByTechnician.entries) {
+      totals[entry.key] =
+          entry.value.fold(0.0, (sum, line) => sum + line.lineTotal);
+    }
+    return totals;
+  }
+
+  // Check if all service lines have technicians assigned
+  bool get hasAllTechniciansAssigned {
+    return services.every((line) => line.technicianId != null);
+  }
 
   Map<String, dynamic> toJson() {
     return {

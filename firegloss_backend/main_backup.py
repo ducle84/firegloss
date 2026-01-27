@@ -7,9 +7,7 @@ from firebase_service import firebase_service
 from models import (
     UserCreate, UserUpdate, UserResponse, APIResponse,
     CompanyCreate, CompanyUpdate, EmployeeCreate, EmployeeUpdate,
-    CategoryCreate, CategoryUpdate, ItemCreate, ItemUpdate,
-    TransactionCreate, TransactionUpdate, TransactionLineCreate, TransactionLineUpdate,
-    TransactionStatus, PaymentMethod, ItemType
+    CategoryCreate, CategoryUpdate, ItemCreate, ItemUpdate
 )
 
 app = FastAPI(
@@ -28,6 +26,31 @@ app.add_middleware(
 )
 
 @app.get("/")
+"""
+Health-check endpoint for the FastAPI application.
+
+This asynchronous GET handler responds to requests at the root path ("/") and
+returns a JSON-serializable dictionary describing service health.
+
+Meaning of the syntax used:
+- @app.get("/") : a FastAPI decorator that registers this function as the handler
+    for HTTP GET requests to the "/" route.
+- async def health_check(): declares an asynchronous coroutine function; FastAPI
+    will run it in the event loop and can await I/O inside it.
+- The function returns a Python dict; FastAPI automatically serializes this to a
+    JSON HTTP response with a 200 status code by default.
+- firebase_status is determined by evaluating the truthiness of
+    firebase_service.db: if truthy -> "connected", otherwise -> "not connected".
+- datetime.now().isoformat() produces an ISO 8601 timestamp string included in
+    the response.
+
+Returns:
+        dict: A JSON-serializable mapping with keys:
+                - "status": overall service status (e.g., "healthy")
+                - "message": human-readable message about the API
+                - "firebase_status": "connected" or "not connected" depending on Firebase DB
+                - "timestamp": ISO-formatted current timestamp
+"""
 async def health_check():
     """Health check endpoint"""
     firebase_status = "connected" if firebase_service.db else "not connected"
@@ -416,212 +439,6 @@ async def delete_item(item_id: str):
             success=True,
             message="Item deleted successfully"
         )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Transaction endpoints
-@app.get("/transactions", response_model=APIResponse)
-async def get_transactions():
-    """Get all transactions"""
-    try:
-        transactions = firebase_service.get_all_transactions()
-        
-        return APIResponse(
-            success=True,
-            message="Transactions retrieved successfully",
-            data={"transactions": transactions}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/transactions", response_model=APIResponse)
-async def create_transaction(transaction: TransactionCreate):
-    """Create a new transaction"""
-    try:
-        # Use the client-provided timestamps if available, otherwise use server time
-        current_time = datetime.now()
-        transaction_data = {
-            "companyId": transaction.companyId,
-            "transactionNumber": transaction.transactionNumber,
-            "transactionDate": transaction.transactionDate,
-            "customerId": transaction.customerId,
-            "customerName": transaction.customerName,
-            "customerPhone": transaction.customerPhone,
-            "customerEmail": transaction.customerEmail,
-            "employeeId": transaction.employeeId,
-            "status": transaction.status,
-            "paymentMethod": transaction.paymentMethod,
-            "subtotal": transaction.subtotal,
-            "tax": transaction.tax,
-            "discount": transaction.discount,
-            "tip": transaction.tip,
-            "total": transaction.total,
-            "notes": transaction.notes,
-            "createdAt": transaction.createdAt if hasattr(transaction, 'createdAt') and transaction.createdAt else current_time,
-            "updatedAt": transaction.updatedAt if hasattr(transaction, 'updatedAt') and transaction.updatedAt else current_time
-        }
-        
-        transaction_id = firebase_service.create_transaction(transaction_data)
-        
-        # Get the created transaction to return it
-        created_transaction = firebase_service.get_transaction(transaction_id)
-        created_transaction['id'] = transaction_id
-        
-        return APIResponse(
-            success=True,
-            message="Transaction created successfully",
-            data={"transaction": created_transaction}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/transactions/{transaction_id}", response_model=APIResponse)
-async def get_transaction(transaction_id: str):
-    """Get transaction by ID"""
-    try:
-        transaction = firebase_service.get_transaction(transaction_id)
-        
-        if not transaction:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        transaction['id'] = transaction_id
-        
-        return APIResponse(
-            success=True,
-            message="Transaction retrieved successfully",
-            data={"transaction": transaction}
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.put("/transactions/{transaction_id}", response_model=APIResponse)
-async def update_transaction(transaction_id: str, transaction_update: TransactionUpdate):
-    """Update transaction"""
-    try:
-        # Check if transaction exists
-        existing_transaction = firebase_service.get_transaction(transaction_id)
-        if not existing_transaction:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        # Prepare update data
-        update_data = {
-            "updatedAt": datetime.now()
-        }
-        
-        # Add only provided fields to update data
-        if transaction_update.customerId is not None:
-            update_data["customerId"] = transaction_update.customerId
-        if transaction_update.customerName is not None:
-            update_data["customerName"] = transaction_update.customerName
-        if transaction_update.customerPhone is not None:
-            update_data["customerPhone"] = transaction_update.customerPhone
-        if transaction_update.customerEmail is not None:
-            update_data["customerEmail"] = transaction_update.customerEmail
-        if transaction_update.status is not None:
-            update_data["status"] = transaction_update.status
-        if transaction_update.paymentMethod is not None:
-            update_data["paymentMethod"] = transaction_update.paymentMethod
-        if transaction_update.subtotal is not None:
-            update_data["subtotal"] = transaction_update.subtotal
-        if transaction_update.tax is not None:
-            update_data["tax"] = transaction_update.tax
-        if transaction_update.discount is not None:
-            update_data["discount"] = transaction_update.discount
-        if transaction_update.tip is not None:
-            update_data["tip"] = transaction_update.tip
-        if transaction_update.total is not None:
-            update_data["total"] = transaction_update.total
-        if transaction_update.notes is not None:
-            update_data["notes"] = transaction_update.notes
-        
-        firebase_service.update_transaction(transaction_id, update_data)
-        
-        return APIResponse(
-            success=True,
-            message="Transaction updated successfully"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.delete("/transactions/{transaction_id}", response_model=APIResponse)
-async def delete_transaction(transaction_id: str):
-    """Delete transaction"""
-    try:
-        # Check if transaction exists
-        existing_transaction = firebase_service.get_transaction(transaction_id)
-        if not existing_transaction:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        firebase_service.delete_transaction(transaction_id)
-        
-        return APIResponse(
-            success=True,
-            message="Transaction deleted successfully"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# Transaction Lines endpoints
-@app.get("/transactions/{transaction_id}/lines", response_model=APIResponse)
-async def get_transaction_lines(transaction_id: str):
-    """Get all lines for a transaction"""
-    try:
-        # Check if transaction exists
-        transaction = firebase_service.get_transaction(transaction_id)
-        if not transaction:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        lines = firebase_service.get_transaction_lines(transaction_id)
-        
-        return APIResponse(
-            success=True,
-            message="Transaction lines retrieved successfully",
-            data={"lines": lines}
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/transactions/{transaction_id}/lines", response_model=APIResponse)
-async def add_transaction_line(transaction_id: str, line: TransactionLineCreate):
-    """Add a line to a transaction"""
-    try:
-        # Check if transaction exists
-        transaction = firebase_service.get_transaction(transaction_id)
-        if not transaction:
-            raise HTTPException(status_code=404, detail="Transaction not found")
-        
-        line_data = {
-            "transactionId": transaction_id,
-            "itemId": line.itemId,
-            "itemName": line.itemName,
-            "itemType": line.itemType,
-            "quantity": line.quantity,
-            "unitPrice": line.unitPrice,
-            "lineTotal": line.lineTotal,
-            "technicianId": line.technicianId,
-            "serviceDuration": line.serviceDuration,
-            "notes": line.notes,
-            "createdAt": datetime.now(),
-            "updatedAt": datetime.now()
-        }
-        
-        line_id = firebase_service.create_transaction_line(line_data)
-        
-        return APIResponse(
-            success=True,
-            message="Transaction line added successfully",
-            data={"line_id": line_id}
-        )
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

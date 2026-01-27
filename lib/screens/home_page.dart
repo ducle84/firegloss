@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firegloss/services/auth_service.dart';
-import 'package:firegloss/services/passcode_service.dart';
-import 'package:firegloss/models/employee.dart' as app_employee;
-import 'package:firegloss/screens/transaction_screen.dart';
+import 'package:firegloss/models/employee.dart';
+import 'package:firegloss/screens/transaction_dashboard_screen.dart';
 import 'package:firegloss/screens/setup_screen.dart';
 import 'package:firegloss/screens/reports_screen.dart';
 import 'package:firegloss/screens/backend_test_page.dart';
@@ -16,85 +15,47 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _selectedIndex = 1; // Default to Transaction (index 1)
-  late app_employee.Employee _currentEmployee;
 
   @override
   void initState() {
     super.initState();
-    // For demo purposes, creating a default employee
-    // In production, this would come from authentication
-    final authService = AuthService();
-    final firebaseUser = authService.currentUser;
-
-    _currentEmployee = app_employee.Employee(
-      id: 'emp_1',
-      uid: firebaseUser?.uid ?? 'demo',
-      companyId: 'comp_1',
-      email: firebaseUser?.email ?? 'demo@firegloss.com',
-      firstName: 'Demo',
-      lastName: 'Employee',
-      role: app_employee
-          .EmployeeRole.manager, // Change this to test different roles
-      hiredDate: DateTime.now().subtract(const Duration(days: 365)),
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
+    // No employee concept needed at home page level
+    // Employees/technicians are managed within transaction context
   }
 
   Future<void> _onItemTapped(int index) async {
-    // Check if accessing sensitive screens
-    if ((index == 0 || index == 2) &&
-        !_currentEmployee.canAccessWithoutPasscode()) {
-      // Setup or Reports screen - requires passcode for non-admin users
-      if (_currentEmployee.canAccessSensitiveScreens()) {
-        bool authorized = await PasscodeService.showPasscodeDialog(context);
-        if (!authorized) return;
-      } else {
-        _showAccessDeniedDialog();
-        return;
-      }
-    }
-
+    // For now, all screens are accessible
+    // In production, implement proper authentication and role-based access
     setState(() {
       _selectedIndex = index;
     });
   }
 
-  void _showAccessDeniedDialog() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.block, color: Colors.red),
-              const SizedBox(width: 8),
-              const Text('Access Denied'),
-            ],
-          ),
-          content:
-              const Text('You do not have permission to access this area.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _getSelectedScreen() {
+    // Create a temporary employee for screens that still require it
+    // In production, this would come from authentication
+    final tempEmployee = Employee(
+      id: 'temp_emp',
+      uid: 'temp_uid',
+      companyId: 'temp_company',
+      email: 'temp@example.com',
+      firstName: 'System',
+      lastName: 'User',
+      role: EmployeeRole.manager,
+      hiredDate: DateTime.now(),
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
     switch (_selectedIndex) {
       case 0:
-        return SetupScreen(currentEmployee: _currentEmployee);
+        return SetupScreen(currentEmployee: tempEmployee);
       case 1:
-        return TransactionScreen(currentEmployee: _currentEmployee);
+        return const TransactionDashboardScreen();
       case 2:
-        return ReportsScreen(currentEmployee: _currentEmployee);
+        return ReportsScreen(currentEmployee: tempEmployee);
       default:
-        return TransactionScreen(currentEmployee: _currentEmployee);
+        return const TransactionDashboardScreen();
     }
   }
 
@@ -127,19 +88,6 @@ class _HomePageState extends State<HomePage> {
             },
             tooltip: 'Backend Testing',
           ),
-          // User Role Display
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Center(
-              child: Text(
-                _currentEmployee.role.toString().split('.').last.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
           // Sign Out Button
           IconButton(
             icon: const Icon(Icons.logout),
@@ -152,73 +100,17 @@ class _HomePageState extends State<HomePage> {
       ),
       body: _getSelectedScreen(),
       bottomNavigationBar: BottomNavigationBar(
-        items: [
+        items: const [
           BottomNavigationBarItem(
-            icon: Stack(
-              children: [
-                const Icon(Icons.settings),
-                if (!_currentEmployee.canAccessSensitiveScreens())
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                if (_currentEmployee.canAccessSensitiveScreens() &&
-                    !_currentEmployee.canAccessWithoutPasscode())
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Icon(
-                      Icons.lock,
-                      size: 12,
-                      color: Colors.amber,
-                    ),
-                  ),
-              ],
-            ),
+            icon: Icon(Icons.settings),
             label: 'Setup',
           ),
-          const BottomNavigationBarItem(
+          BottomNavigationBarItem(
             icon: Icon(Icons.point_of_sale),
             label: 'Transaction',
           ),
           BottomNavigationBarItem(
-            icon: Stack(
-              children: [
-                const Icon(Icons.assessment),
-                if (!_currentEmployee.canAccessSensitiveScreens())
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                if (_currentEmployee.canAccessSensitiveScreens() &&
-                    !_currentEmployee.canAccessWithoutPasscode())
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Icon(
-                      Icons.lock,
-                      size: 12,
-                      color: Colors.amber,
-                    ),
-                  ),
-              ],
-            ),
+            icon: Icon(Icons.assessment),
             label: 'Reports',
           ),
         ],

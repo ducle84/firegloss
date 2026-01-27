@@ -1,6 +1,7 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
+from enum import Enum
 
 class UserBase(BaseModel):
     email: str
@@ -98,6 +99,80 @@ class ItemUpdate(BaseModel):
     sku: Optional[str] = None
     stockQuantity: Optional[int] = None
     isActive: Optional[bool] = None
+
+# Transaction Models
+class TransactionStatus(str, Enum):
+    NEW = "newTransaction"
+    ASSIGNED = "assigned"
+    IN_PROGRESS = "inProgress"
+    ON_HOLD = "onHold"
+    CANCELLED = "cancelled"
+    VOIDED = "voided"
+    COMPLETE = "complete"
+
+class PaymentMethod(str, Enum):
+    CASH = "cash"
+    CARD = "card"
+    CHECK = "check"
+    OTHER = "other"
+
+class ItemType(str, Enum):
+    SERVICE = "service"
+    PRODUCT = "product"
+
+class TransactionCreate(BaseModel):
+    companyId: str
+    transactionNumber: str
+    transactionDate: datetime
+    customerId: Optional[str] = None
+    customerName: Optional[str] = None
+    customerPhone: Optional[str] = None
+    customerEmail: Optional[str] = None
+    employeeId: str
+    status: TransactionStatus = TransactionStatus.NEW
+    paymentMethod: PaymentMethod = PaymentMethod.CASH
+    subtotal: float = 0.0
+    tax: float = 0.0
+    discount: float = 0.0
+    tip: float = 0.0
+    total: float = 0.0
+    notes: Optional[str] = None
+    createdAt: Optional[datetime] = None
+    updatedAt: Optional[datetime] = None
+
+class TransactionUpdate(BaseModel):
+    customerId: Optional[str] = None
+    customerName: Optional[str] = None
+    customerPhone: Optional[str] = None
+    customerEmail: Optional[str] = None
+    status: Optional[TransactionStatus] = None
+    paymentMethod: Optional[PaymentMethod] = None
+    subtotal: Optional[float] = None
+    tax: Optional[float] = None
+    discount: Optional[float] = None
+    tip: Optional[float] = None
+    total: Optional[float] = None
+    notes: Optional[str] = None
+
+class TransactionLineCreate(BaseModel):
+    transactionId: str
+    itemId: str
+    itemName: str
+    itemType: ItemType
+    quantity: int
+    unitPrice: float
+    lineTotal: float
+    technicianId: Optional[str] = None
+    serviceDuration: Optional[int] = None
+    notes: Optional[str] = None
+
+class TransactionLineUpdate(BaseModel):
+    quantity: Optional[int] = None
+    unitPrice: Optional[float] = None
+    lineTotal: Optional[float] = None
+    technicianId: Optional[str] = None
+    serviceDuration: Optional[int] = None
+    notes: Optional[str] = None
 
 class APIResponse(BaseModel):
     success: bool
