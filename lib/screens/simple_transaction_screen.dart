@@ -9,11 +9,13 @@ import '../services/management_service.dart';
 class SimpleTransactionScreen extends StatefulWidget {
   final Employee? defaultTechnician;
   final TransactionHeader? existingTransaction;
+  final List<TransactionLine>? existingTransactionLines;
 
   const SimpleTransactionScreen({
     Key? key,
     this.defaultTechnician,
     this.existingTransaction,
+    this.existingTransactionLines,
   }) : super(key: key);
 
   @override
@@ -66,6 +68,8 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     if (_currentTransaction == null) {
       _createTransaction();
     } else {
+      // Load existing transaction data including lines, discounts, and payments
+      _loadExistingTransactionData();
       setState(() {
         _isCreatingTransaction = false;
       });
@@ -166,8 +170,8 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         discount: 0.0,
         tip: 0.0,
         total: 0.0,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
+        createdAt: DateTime.now().toUtc(),
+        updatedAt: DateTime.now().toUtc(),
       );
 
       final createdTransaction =
@@ -188,6 +192,69 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       // Don't show error snackbar for expected 404s - just log it
       print(
           'Transaction created locally for UI testing (backend not implemented)');
+    }
+  }
+
+  Future<void> _loadExistingTransactionData() async {
+    if (_currentTransaction == null) return;
+
+    try {
+      print(
+          'Loading existing transaction data for: ${_currentTransaction!.transactionNumber}');
+
+      // Load transaction lines (items) - use passed lines if available, otherwise fetch
+      List<TransactionLine> lines = [];
+      if (widget.existingTransactionLines != null) {
+        lines = widget.existingTransactionLines!;
+        print('Using pre-loaded transaction lines: ${lines.length} items');
+      } else {
+        lines = await ManagementService.getTransactionLines(
+            _currentTransaction!.id);
+        print('Fetched transaction lines from server: ${lines.length} items');
+      }
+
+      setState(() {
+        _lines.clear();
+        _lines.addAll(lines);
+      });
+
+      // Set technician from transaction data
+      if (_currentTransaction!.employeeId.isNotEmpty &&
+          _currentTransaction!.employeeId != 'temp_employee') {
+        // Wait for employees to be loaded first
+        await Future.delayed(
+            Duration.zero); // Allow other async operations to complete
+        final technician = _allEmployees.firstWhere(
+          (emp) => emp.id == _currentTransaction!.employeeId,
+          orElse: () => _allEmployees.isNotEmpty
+              ? _allEmployees.first
+              : _defaultTechnician!,
+        );
+        _selectedTechnician = technician;
+      }
+
+      // Set payment amount and discount from transaction total
+      if (_currentTransaction!.total > 0) {
+        _paidAmount = _currentTransaction!.total;
+        _paymentController.text = _paidAmount.toString();
+      }
+
+      // Set discount values if any
+      if (_currentTransaction!.discount > 0) {
+        _discountAmount = _currentTransaction!.discount;
+        _discountValue = _discountAmount;
+        _discountType = 'flat';
+      }
+
+      _calculateTotal();
+      print(
+          'Loaded ${_lines.length} items for transaction ${_currentTransaction!.transactionNumber}');
+      print(
+          'Transaction total: \$${_currentTransaction!.total.toStringAsFixed(2)}');
+      print('Discount: \$${_currentTransaction!.discount.toStringAsFixed(2)}');
+    } catch (e) {
+      print('Error loading existing transaction data: $e');
+      // Don't fail completely - just log the error and continue with basic transaction data
     }
   }
 

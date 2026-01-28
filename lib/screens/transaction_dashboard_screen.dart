@@ -36,10 +36,10 @@ class _TransactionDashboardScreenState
   }
 
   void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _timer = Timer.periodic(const Duration(seconds: 10), (timer) {
       if (mounted) {
         setState(() {
-          // Force rebuild to update running timers
+          // Force rebuild to update running timers and "created ago" times
         });
       }
     });
@@ -109,6 +109,13 @@ class _TransactionDashboardScreenState
       return _transactions;
     }
 
+    // Check if it's a technician filter (starts with 'tech_')
+    if (_selectedFilter.startsWith('tech_')) {
+      final technicianId =
+          _selectedFilter.substring(5); // Remove 'tech_' prefix
+      return _transactions.where((t) => t.employeeId == technicianId).toList();
+    }
+
     switch (_selectedFilter) {
       case 'new':
         return _transactions
@@ -125,6 +132,13 @@ class _TransactionDashboardScreenState
       default:
         return _transactions;
     }
+  }
+
+  List<Employee> get _techniciansWithTransactions {
+    final technicianIds = _transactions.map((t) => t.employeeId).toSet();
+    return _employees.values
+        .where((employee) => technicianIds.contains(employee.id))
+        .toList();
   }
 
   @override
@@ -300,37 +314,76 @@ class _TransactionDashboardScreenState
   Widget _buildFilters() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Filter: '),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  _buildFilterChip('All', 'all'),
-                  _buildFilterChip('New', 'new'),
-                  _buildFilterChip('In Progress', 'in_progress'),
-                  _buildFilterChip('Complete', 'complete'),
-                ],
+          // Status filters
+          Row(
+            children: [
+              const Text('Status: '),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildFilterChip('All', 'all'),
+                      _buildFilterChip('New', 'new'),
+                      _buildFilterChip('In Progress', 'in_progress'),
+                      _buildFilterChip('Complete', 'complete'),
+                    ],
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
+          // Technician filters (only show if there are technicians with transactions)
+          if (_techniciansWithTransactions.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Text('Technician: '),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: _techniciansWithTransactions
+                          .map((tech) => _buildFilterChip(
+                                tech.firstName,
+                                'tech_${tech.id}',
+                                icon: Icons.person,
+                              ))
+                          .toList(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildFilterChip(String label, String value) {
+  Widget _buildFilterChip(String label, String value, {IconData? icon}) {
     return Container(
       margin: const EdgeInsets.only(right: 8),
       child: FilterChip(
-        label: Text(label),
+        label: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16),
+              const SizedBox(width: 4),
+            ],
+            Text(label),
+          ],
+        ),
         selected: _selectedFilter == value,
         onSelected: (selected) {
           setState(() {
-            _selectedFilter = value;
+            _selectedFilter = selected ? value : 'all';
           });
         },
         selectedColor: Colors.green.withOpacity(0.3),
@@ -589,6 +642,7 @@ class _TransactionDashboardScreenState
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontSize: 12,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                     const Spacer(),
@@ -602,11 +656,11 @@ class _TransactionDashboardScreenState
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            'In Progress',
+                            'Live Timer: ${transaction.formattedDuration}',
                             style: TextStyle(
                               color: Colors.orange[600],
                               fontSize: 12,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -628,11 +682,15 @@ class _TransactionDashboardScreenState
   }
 
   void _openTransaction(TransactionHeader transaction) {
+    // Get the transaction lines for this transaction
+    final lines = _transactionLines[transaction.id] ?? [];
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => SimpleTransactionScreen(
           existingTransaction: transaction,
+          existingTransactionLines: lines,
         ),
       ),
     ).then((_) => _loadTransactions());

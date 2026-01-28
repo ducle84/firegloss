@@ -177,8 +177,8 @@ class TransactionHeader {
       tip: json['tip'].toDouble(),
       total: json['total'].toDouble(),
       notes: json['notes'],
-      createdAt: DateTime.parse(json['createdAt']),
-      updatedAt: DateTime.parse(json['updatedAt']),
+      createdAt: DateTime.parse(json['createdAt']).toLocal(),
+      updatedAt: DateTime.parse(json['updatedAt']).toLocal(),
     );
   }
 

@@ -438,8 +438,9 @@ async def get_transactions():
 async def create_transaction(transaction: TransactionCreate):
     """Create a new transaction"""
     try:
-        # Use the client-provided timestamps if available, otherwise use server time
-        current_time = datetime.now()
+        # Use the client-provided timestamps if available, otherwise use UTC time
+        from datetime import timezone
+        current_time = datetime.now(timezone.utc)
         transaction_data = {
             "companyId": transaction.companyId,
             "transactionNumber": transaction.transactionNumber,
