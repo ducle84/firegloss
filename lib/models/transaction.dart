@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'item.dart';
+import 'discount.dart'; // For Payment model
 
 enum TransactionStatus {
   newTransaction,
@@ -24,7 +25,9 @@ class TransactionHeader {
   final String? customerEmail;
   final String employeeId; // Employee who processed the transaction
   final TransactionStatus status;
+  @Deprecated('Use payments list instead')
   final PaymentMethod paymentMethod;
+  final List<Payment> payments; // Multiple payments with different methods
   final double subtotal;
   final double tax;
   final double discount;
@@ -45,7 +48,8 @@ class TransactionHeader {
     this.customerEmail,
     required this.employeeId,
     required this.status,
-    required this.paymentMethod,
+    @Deprecated('Use payments instead') this.paymentMethod = PaymentMethod.cash,
+    this.payments = const [],
     required this.subtotal,
     required this.tax,
     required this.discount,
@@ -141,6 +145,7 @@ class TransactionHeader {
       'employeeId': employeeId,
       'status': status.toString().split('.').last,
       'paymentMethod': paymentMethod.toString().split('.').last,
+      'payments': payments.map((payment) => payment.toJson()).toList(),
       'subtotal': subtotal,
       'tax': tax,
       'discount': discount,
@@ -171,6 +176,9 @@ class TransactionHeader {
         (e) => e.toString().split('.').last == json['paymentMethod'],
         orElse: () => PaymentMethod.cash,
       ),
+      payments: json['payments'] != null
+          ? (json['payments'] as List).map((p) => Payment.fromJson(p)).toList()
+          : [],
       subtotal: json['subtotal'].toDouble(),
       tax: json['tax'].toDouble(),
       discount: json['discount'].toDouble(),
@@ -189,6 +197,7 @@ class TransactionHeader {
     String? customerEmail,
     TransactionStatus? status,
     PaymentMethod? paymentMethod,
+    List<Payment>? payments,
     double? subtotal,
     double? tax,
     double? discount,
@@ -209,6 +218,7 @@ class TransactionHeader {
       employeeId: employeeId,
       status: status ?? this.status,
       paymentMethod: paymentMethod ?? this.paymentMethod,
+      payments: payments ?? this.payments,
       subtotal: subtotal ?? this.subtotal,
       tax: tax ?? this.tax,
       discount: discount ?? this.discount,

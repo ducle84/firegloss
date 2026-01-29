@@ -4,6 +4,7 @@ import '../models/item.dart';
 import '../models/employee.dart';
 import '../models/customer.dart';
 import '../models/item_category.dart';
+import '../models/discount.dart'; // For Payment model
 import '../services/management_service.dart';
 
 class SimpleTransactionScreen extends StatefulWidget {
@@ -37,21 +38,18 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
   double _discountAmount = 0.0;
   String _discountType = 'none'; // 'none', 'percent', 'flat'
   double _discountValue = 0.0;
+  List<Payment> _payments = [];
   double _paidAmount = 0.0;
   Employee? _selectedTechnician;
   final TextEditingController _paymentController = TextEditingController();
   bool _isLoadingCategories = true;
   bool _isLoadingItems = true;
   bool _isCreatingTransaction = true;
+  bool _isLoadingExistingData = false;
 
   @override
   void initState() {
     super.initState();
-    print('=== TRANSACTION SCREEN INIT ===');
-    print(
-        'Default technician: ${widget.defaultTechnician?.fullName ?? 'None selected'}');
-    print('Will load all employees and allow additional technicians');
-    print('================================');
 
     // Set the default technician if provided
     _selectedTechnician = widget.defaultTechnician;
@@ -68,11 +66,13 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     if (_currentTransaction == null) {
       _createTransaction();
     } else {
-      // Load existing transaction data including lines, discounts, and payments
-      _loadExistingTransactionData();
+      // Set loading state for existing transaction
       setState(() {
+        _isLoadingExistingData = true;
         _isCreatingTransaction = false;
       });
+      // Load existing transaction data including lines, discounts, and payments
+      _loadExistingTransactionData();
     }
   }
 
@@ -199,8 +199,44 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     if (_currentTransaction == null) return;
 
     try {
+      print('========== TRANSACTION LOADING DEBUG ==========');
       print(
           'Loading existing transaction data for: ${_currentTransaction!.transactionNumber}');
+      print('Initial transaction details from widget:');
+      print('  ID: ${_currentTransaction!.id}');
+      print('  Number: ${_currentTransaction!.transactionNumber}');
+      print('  Total: \$${_currentTransaction!.total.toStringAsFixed(2)}');
+      print(
+          '  Discount: \$${_currentTransaction!.discount.toStringAsFixed(2)}');
+      print(
+          '  Payment Method (legacy): ${_currentTransaction!.paymentMethod.toString()}');
+      print('  Payments array length: ${_currentTransaction!.payments.length}');
+      for (int i = 0; i < _currentTransaction!.payments.length; i++) {
+        final payment = _currentTransaction!.payments[i];
+        print(
+            '    Initial Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
+      }
+      print(
+          'Looking up cached transaction with ID: ${_currentTransaction!.id}');
+
+      // Check if there's a cached update for this transaction
+      final cachedTransaction =
+          await ManagementService.getCachedTransactionUpdate(
+              _currentTransaction!.id);
+      if (cachedTransaction != null) {
+        print(
+            'Found cached transaction update with discount: \$${cachedTransaction.discount.toStringAsFixed(2)}, total: \$${cachedTransaction.total.toStringAsFixed(2)}, payments: ${cachedTransaction.payments.length}');
+        for (int i = 0; i < cachedTransaction.payments.length; i++) {
+          final payment = cachedTransaction.payments[i];
+          print(
+              '  Cached Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
+        }
+        // Use the cached transaction as our current transaction
+        _currentTransaction = cachedTransaction;
+      } else {
+        print(
+            'No cached transaction update found for ${_currentTransaction!.id}');
+      }
 
       // Load transaction lines (items) - use passed lines if available, otherwise fetch
       List<TransactionLine> lines = [];
@@ -213,38 +249,199 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         print('Fetched transaction lines from server: ${lines.length} items');
       }
 
-      setState(() {
-        _lines.clear();
-        _lines.addAll(lines);
-      });
+      // Wait for employees to be loaded if needed
+      int attempts = 0;
+      while (_allEmployees.isEmpty && attempts < 10) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        attempts++;
+      }
 
       // Set technician from transaction data
+      Employee? selectedTech = _selectedTechnician;
       if (_currentTransaction!.employeeId.isNotEmpty &&
-          _currentTransaction!.employeeId != 'temp_employee') {
-        // Wait for employees to be loaded first
-        await Future.delayed(
-            Duration.zero); // Allow other async operations to complete
-        final technician = _allEmployees.firstWhere(
+          _currentTransaction!.employeeId != 'temp_employee' &&
+          _allEmployees.isNotEmpty) {
+        selectedTech = _allEmployees.firstWhere(
           (emp) => emp.id == _currentTransaction!.employeeId,
           orElse: () => _allEmployees.isNotEmpty
               ? _allEmployees.first
               : _defaultTechnician!,
         );
-        _selectedTechnician = technician;
       }
 
-      // Set payment amount and discount from transaction total
-      if (_currentTransaction!.total > 0) {
-        _paidAmount = _currentTransaction!.total;
-        _paymentController.text = _paidAmount.toString();
+      // Set payments and discount from transaction
+      List<Payment> payments = [];
+      double paidAmount = 0.0;
+
+      print('Current transaction before payment loading:');
+      print('  ID: ${_currentTransaction!.id}');
+      print('  Number: ${_currentTransaction!.transactionNumber}');
+      print(
+          '  Payments in transaction object: ${_currentTransaction!.payments.length}');
+      for (int i = 0; i < _currentTransaction!.payments.length; i++) {
+        final payment = _currentTransaction!.payments[i];
+        print(
+            '    Transaction Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
+      }
+
+      // First try to get payments from the transaction object
+      if (_currentTransaction!.payments.isNotEmpty) {
+        payments = _currentTransaction!.payments;
+        paidAmount = payments.fold(0.0, (sum, payment) => sum + payment.amount);
+        print('Loaded ${payments.length} payments from transaction object:');
+        for (int i = 0; i < payments.length; i++) {
+          final payment = payments[i];
+          print(
+              '  Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
+        }
+      } else {
+        // Try to load payments from the payment service
+        try {
+          final loadedPayments =
+              await ManagementService.getPaymentsForTransaction(
+                  _currentTransaction!.id);
+          if (loadedPayments.isNotEmpty) {
+            payments = loadedPayments;
+            paidAmount =
+                payments.fold(0.0, (sum, payment) => sum + payment.amount);
+            print('Loaded ${payments.length} payments from payment service:');
+            for (int i = 0; i < payments.length; i++) {
+              final payment = payments[i];
+              print(
+                  '  Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
+            }
+          } else {
+            // Check if this transaction was explicitly saved with zero payments
+            // by looking for it in the cache - if it's cached, respect the empty payments array
+            final cachedForPaymentCheck =
+                await ManagementService.getCachedTransactionUpdate(
+                    _currentTransaction!.id);
+
+            if (cachedForPaymentCheck != null) {
+              // Transaction has been cached, so respect its payments array (even if empty)
+              print(
+                  'Transaction found in cache with ${cachedForPaymentCheck.payments.length} payments - respecting cached state');
+              payments = cachedForPaymentCheck.payments;
+              paidAmount =
+                  payments.fold(0.0, (sum, payment) => sum + payment.amount);
+              if (payments.isEmpty) {
+                print('Transaction has explicitly zero payments');
+              }
+            } else if (_currentTransaction!.total > 0) {
+              // Only create legacy payment for truly legacy transactions (not in cache)
+              print(
+                  'No payments found and not in cache, creating legacy payment for total: \$${_currentTransaction!.total.toStringAsFixed(2)}');
+              final legacyPayment = Payment(
+                id: 'payment_${DateTime.now().millisecondsSinceEpoch}',
+                transactionId: _currentTransaction!.id,
+                method: _currentTransaction!.paymentMethod,
+                amount: _currentTransaction!.total,
+                paymentDate: DateTime.now(),
+                createdAt: DateTime.now(),
+              );
+              payments = [legacyPayment];
+              paidAmount = _currentTransaction!.total;
+            }
+          }
+        } catch (e) {
+          print('Error loading payments from service: $e');
+          // Check if this transaction was explicitly saved with zero payments
+          // by looking for it in the cache - if it's cached, respect the empty payments array
+          final cachedForPaymentCheck =
+              await ManagementService.getCachedTransactionUpdate(
+                  _currentTransaction!.id);
+
+          if (cachedForPaymentCheck != null) {
+            // Transaction has been cached, so respect its payments array (even if empty)
+            print(
+                'Transaction found in cache during error handling with ${cachedForPaymentCheck.payments.length} payments - respecting cached state');
+            payments = cachedForPaymentCheck.payments;
+            paidAmount =
+                payments.fold(0.0, (sum, payment) => sum + payment.amount);
+            if (payments.isEmpty) {
+              print(
+                  'Transaction has explicitly zero payments (from error handling)');
+            }
+          } else if (_currentTransaction!.total > 0) {
+            // Only create legacy payment for truly legacy transactions (not in cache)
+            print(
+                'Error loading payments and not in cache, falling back to legacy payment');
+            final legacyPayment = Payment(
+              id: 'payment_${DateTime.now().millisecondsSinceEpoch}',
+              transactionId: _currentTransaction!.id,
+              method: _currentTransaction!.paymentMethod,
+              amount: _currentTransaction!.total,
+              paymentDate: DateTime.now(),
+              createdAt: DateTime.now(),
+            );
+            payments = [legacyPayment];
+            paidAmount = _currentTransaction!.total;
+          }
+        }
       }
 
       // Set discount values if any
+      double discountAmount = 0.0;
+      double discountValue = 0.0;
+      String discountType = 'none';
       if (_currentTransaction!.discount > 0) {
-        _discountAmount = _currentTransaction!.discount;
-        _discountValue = _discountAmount;
-        _discountType = 'flat';
+        discountAmount = _currentTransaction!.discount;
+
+        // Try to determine the original discount type by checking common values
+        final discountPercent = (discountAmount / _totalAmount) * 100;
+
+        // Check if it matches common percentage discounts (within 1% tolerance)
+        if ((discountPercent - 5).abs() < 1) {
+          discountType = 'percent';
+          discountValue = 5;
+        } else if ((discountPercent - 10).abs() < 1) {
+          discountType = 'percent';
+          discountValue = 10;
+        } else if ((discountPercent - 15).abs() < 1) {
+          discountType = 'percent';
+          discountValue = 15;
+        } else if ((discountPercent - 20).abs() < 1) {
+          discountType = 'percent';
+          discountValue = 20;
+        }
+        // Check if it matches common flat discounts
+        else if (discountAmount == 5.0) {
+          discountType = 'flat';
+          discountValue = 5;
+        } else if (discountAmount == 10.0) {
+          discountType = 'flat';
+          discountValue = 10;
+        } else if (discountAmount == 20.0) {
+          discountType = 'flat';
+          discountValue = 20;
+        }
+        // Otherwise treat as custom flat discount
+        else {
+          discountType = 'custom';
+          discountValue = discountAmount;
+        }
+
+        print(
+            'Restored discount: type=$discountType, value=$discountValue, amount=\$${discountAmount.toStringAsFixed(2)}');
       }
+
+      setState(() {
+        _lines.clear();
+        _lines.addAll(lines);
+        _selectedTechnician = selectedTech;
+        _payments.clear();
+        _payments.addAll(payments);
+        _paidAmount = paidAmount;
+        _paymentController.text = paidAmount.toStringAsFixed(2);
+        _discountAmount = discountAmount;
+        _discountValue = discountValue;
+        _discountType = discountType;
+        _isLoadingExistingData = false;
+        // Update _currentTransaction state if we have cached data
+        if (cachedTransaction != null) {
+          _currentTransaction = cachedTransaction;
+        }
+      });
 
       _calculateTotal();
       print(
@@ -254,6 +451,9 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       print('Discount: \$${_currentTransaction!.discount.toStringAsFixed(2)}');
     } catch (e) {
       print('Error loading existing transaction data: $e');
+      setState(() {
+        _isLoadingExistingData = false;
+      });
       // Don't fail completely - just log the error and continue with basic transaction data
     }
   }
@@ -348,30 +548,41 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     _addItemWithTechnician(item, technicianToUse);
   }
 
-  void _updateQuantity(TransactionLine line, int newQuantity) {
+  void _updateQuantity(TransactionLine line, int newQuantity) async {
     if (newQuantity <= 0) {
       setState(() {
         _lines.removeWhere((l) => l.id == line.id);
         _calculateTotal();
       });
+      // TODO: Add method to remove transaction line from backend
       return;
     }
+
+    final updatedLine = line.copyWith(
+      quantity: newQuantity,
+      lineTotal: newQuantity * line.unitPrice,
+      updatedAt: DateTime.now(),
+    );
 
     setState(() {
       final index = _lines.indexWhere((l) => l.id == line.id);
       if (index >= 0) {
-        _lines[index] = line.copyWith(
-          quantity: newQuantity,
-          lineTotal: newQuantity * line.unitPrice,
-          updatedAt: DateTime.now(),
-        );
+        _lines[index] = updatedLine;
         _calculateTotal();
       }
     });
+
+    // Save the updated line to backend
+    try {
+      await ManagementService.addTransactionLine(updatedLine);
+    } catch (e) {
+      print('Error saving updated transaction line: $e');
+    }
   }
 
   void _calculateTotal() {
     _totalAmount = _lines.fold(0.0, (sum, line) => sum + line.lineTotal);
+    _paidAmount = _payments.fold(0.0, (sum, payment) => sum + payment.amount);
     _calculateDiscount(); // Recalculate discount when total changes
     _updateTransactionStatus();
   }
@@ -426,29 +637,40 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
                 ],
               ),
             )
-          : Column(
-              children: [
-                // Transaction Info Header
-                _buildTransactionHeader(),
-                // Main Content
-                Expanded(
-                  child: Row(
+          : _isLoadingExistingData
+              ? const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Left side - Item catalog
-                      Expanded(
-                        flex: 2,
-                        child: _buildItemCatalog(),
-                      ),
-                      // Right side - Receipt preview
-                      Expanded(
-                        flex: 1,
-                        child: _buildReceiptPreview(),
-                      ),
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Loading transaction data...'),
                     ],
                   ),
+                )
+              : Column(
+                  children: [
+                    // Transaction Info Header
+                    _buildTransactionHeader(),
+                    // Main Content
+                    Expanded(
+                      child: Row(
+                        children: [
+                          // Left side - Item catalog
+                          Expanded(
+                            flex: 2,
+                            child: _buildItemCatalog(),
+                          ),
+                          // Right side - Receipt preview
+                          Expanded(
+                            flex: 1,
+                            child: _buildReceiptPreview(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
     );
   }
 
@@ -1063,6 +1285,22 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
           ],
         ),
         const SizedBox(height: 8),
+        // Discount amount display
+        if (_discountAmount > 0)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Discount Applied:',
+                style: TextStyle(fontSize: 14, color: Colors.red),
+              ),
+              Text(
+                '-\$${_discountAmount.toStringAsFixed(2)}',
+                style: const TextStyle(fontSize: 14, color: Colors.red),
+              ),
+            ],
+          ),
+        if (_discountAmount > 0) const SizedBox(height: 8),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -1079,35 +1317,9 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
             ),
           ],
         ),
-        // Payment section
+        // Multiple Payments section
         const SizedBox(height: 8),
-        Row(
-          children: [
-            const Text('Payment: ', style: TextStyle(fontSize: 12)),
-            Expanded(
-              child: TextField(
-                controller: _paymentController,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                style: const TextStyle(fontSize: 12),
-                decoration: const InputDecoration(
-                  hintText: '0.00',
-                  prefixText: '\$',
-                  isDense: true,
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _paidAmount = double.tryParse(value) ?? 0.0;
-                  });
-                  _updateTransactionStatus();
-                },
-              ),
-            ),
-          ],
-        ),
+        _buildPaymentsSection(),
         const SizedBox(height: 4),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1135,29 +1347,11 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         Wrap(
           spacing: 4,
           children: [
-            _buildQuickPayButton('Cash', () {
-              final total = _totalAmount - _discountAmount;
-              _paymentController.text = total.toStringAsFixed(2);
-              setState(() {
-                _paidAmount = total;
-              });
-              _updateTransactionStatus();
-            }),
-            _buildQuickPayButton('Card', () {
-              final total = _totalAmount - _discountAmount;
-              _paymentController.text = total.toStringAsFixed(2);
-              setState(() {
-                _paidAmount = total;
-              });
-              _updateTransactionStatus();
-            }),
-            _buildQuickPayButton('Clear', () {
-              _paymentController.clear();
-              setState(() {
-                _paidAmount = 0.0;
-              });
-              _updateTransactionStatus();
-            }),
+            _buildQuickPayButton(
+                'Add Cash', () => _showAddPaymentDialog(PaymentMethod.cash)),
+            _buildQuickPayButton(
+                'Add Card', () => _showAddPaymentDialog(PaymentMethod.card)),
+            _buildQuickPayButton('Clear All', _clearAllPayments),
           ],
         ),
       ],
@@ -1388,25 +1582,46 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     );
   }
 
-  void _addItemWithTechnician(Item item, Employee technician) {
+  void _addItemWithTechnician(Item item, Employee technician) async {
+    if (_currentTransaction == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content:
+              Text('No active transaction. Please create a transaction first.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     // Check if item already exists in lines
     final existingIndex = _lines.indexWhere(
         (line) => line.itemId == item.id && line.technicianId == technician.id);
 
     if (existingIndex >= 0) {
       // Update quantity if same item with same technician already exists
+      final updatedLine = _lines[existingIndex].copyWith(
+        quantity: _lines[existingIndex].quantity + 1,
+        lineTotal: (_lines[existingIndex].quantity + 1) * item.price,
+        updatedAt: DateTime.now(),
+      );
+
       setState(() {
-        _lines[existingIndex] = _lines[existingIndex].copyWith(
-          quantity: _lines[existingIndex].quantity + 1,
-          lineTotal: (_lines[existingIndex].quantity + 1) * item.price,
-        );
+        _lines[existingIndex] = updatedLine;
         _calculateTotal();
       });
+
+      // Save the updated line to backend
+      try {
+        await ManagementService.addTransactionLine(updatedLine);
+      } catch (e) {
+        print('Error saving updated transaction line: $e');
+      }
     } else {
       // Add new item with specified technician
       final line = TransactionLine(
         id: 'line_${DateTime.now().millisecondsSinceEpoch}',
-        transactionId: 'temp',
+        transactionId: _currentTransaction!.id,
         itemId: item.id,
         itemName: item.name,
         itemType: item.type,
@@ -1423,6 +1638,13 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         _lines.add(line);
         _calculateTotal();
       });
+
+      // Save the new line to backend
+      try {
+        await ManagementService.addTransactionLine(line);
+      } catch (e) {
+        print('Error saving new transaction line: $e');
+      }
     }
   }
 
@@ -1488,11 +1710,15 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     );
   }
 
-  void _removeItem(TransactionLine line) {
+  void _removeItem(TransactionLine line) async {
     setState(() {
       _lines.removeWhere((l) => l.id == line.id);
       _calculateTotal();
     });
+
+    // TODO: Add method to remove transaction line from backend
+    // For now, the line will be removed from memory but we don't have a remove API
+    print('Removed transaction line: ${line.itemName}');
   }
 
   void _saveTransaction() async {
@@ -1507,23 +1733,53 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     }
 
     try {
-      // Update the transaction with current totals
+      // Update the transaction with current totals and payments
       final updatedTransaction = _currentTransaction!.copyWith(
         subtotal: _totalAmount,
         discount: _discountAmount,
         total: _totalAmount - _discountAmount,
+        payments: _payments,
         updatedAt: DateTime.now(),
       );
 
-      // Try to save to backend
-      final success =
-          await ManagementService.updateTransaction(updatedTransaction);
+      print('Saving transaction with:');
+      print('  Transaction ID: ${updatedTransaction.id}');
+      print('  Transaction Number: ${updatedTransaction.transactionNumber}');
+      print('  Subtotal: \$${_totalAmount.toStringAsFixed(2)}');
+      print('  Discount: \$${_discountAmount.toStringAsFixed(2)}');
+      print(
+          '  Total: \$${(_totalAmount - _discountAmount).toStringAsFixed(2)}');
+      print('  Payments count: ${_payments.length}');
+      for (int i = 0; i < _payments.length; i++) {
+        final payment = _payments[i];
+        print(
+            '    Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
+      }
+      print('  Discount Type: $_discountType, Value: $_discountValue');
+
+      // Save each payment individually to ensure they persist
+      for (final payment in _payments) {
+        try {
+          await ManagementService.savePayment(payment);
+          print(
+              'Saved payment: ${payment.methodName} - ${payment.formattedAmount}');
+        } catch (e) {
+          print('Error saving payment ${payment.id}: $e');
+          // Continue with other payments even if one fails
+        }
+      }
+
+      // Transaction lines are already saved when items are added/updated
+      // No need to re-save them here to avoid duplicates
+
+      // Try to save transaction header to backend
+      await ManagementService.updateTransaction(updatedTransaction);
 
       // Always show success since we mock it when backend is unavailable
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'Transaction ${_currentTransaction!.transactionNumber} saved!'),
+              'Transaction ${_currentTransaction!.transactionNumber} saved with ${_lines.length} items!'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
         ),
@@ -1536,12 +1792,397 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              'Transaction ${_currentTransaction!.transactionNumber} saved!'),
+              'Transaction ${_currentTransaction!.transactionNumber} saved with ${_lines.length} items!'),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 2),
         ),
       );
       Navigator.pop(context);
     }
+  }
+
+  Widget _buildPaymentsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text('Payments:',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.add, size: 16),
+              onPressed: _showAddPaymentDialog,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              tooltip: 'Add Payment',
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        if (_payments.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: const Text(
+              'No payments added',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+                fontStyle: FontStyle.italic,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          )
+        else
+          Column(
+            children: _payments.asMap().entries.map((entry) {
+              final index = entry.key;
+              final payment = entry.value;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green[50],
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green[200]!),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _getPaymentIcon(payment.method),
+                      size: 16,
+                      color: Colors.green[700],
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      payment.methodName,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[700],
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      payment.formattedAmount,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green[800],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    InkWell(
+                      onTap: () => _removePayment(index),
+                      child: Icon(
+                        Icons.close,
+                        size: 16,
+                        color: Colors.red[600],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+          decoration: BoxDecoration(
+            color: Colors.blue[50],
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.blue[200]!),
+          ),
+          child: Row(
+            children: [
+              Text(
+                'Total Paid:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[700],
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '\$${_paidAmount.toStringAsFixed(2)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue[800],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconData _getPaymentIcon(PaymentMethod method) {
+    switch (method) {
+      case PaymentMethod.cash:
+        return Icons.money;
+      case PaymentMethod.card:
+        return Icons.credit_card;
+      case PaymentMethod.check:
+        return Icons.receipt;
+      case PaymentMethod.other:
+        return Icons.payment;
+    }
+  }
+
+  void _showAddPaymentDialog([PaymentMethod? preselectedMethod]) {
+    final totalDue = _totalAmount - _discountAmount;
+    final remaining = totalDue - _paidAmount;
+
+    if (remaining <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Transaction is already fully paid'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final amountController =
+        TextEditingController(text: remaining.toStringAsFixed(2));
+    PaymentMethod selectedMethod = preselectedMethod ?? PaymentMethod.cash;
+    final referenceController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(
+                  'Add Payment (\$${remaining.toStringAsFixed(2)} remaining)'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Payment method selection
+                  const Text('Payment Method:',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: PaymentMethod.values.map((method) {
+                      final isSelected = selectedMethod == method;
+                      return FilterChip(
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_getPaymentIcon(method), size: 16),
+                            const SizedBox(width: 4),
+                            Text(_getPaymentMethodName(method)),
+                          ],
+                        ),
+                        selected: isSelected,
+                        onSelected: (selected) {
+                          if (selected) {
+                            setDialogState(() {
+                              selectedMethod = method;
+                            });
+                          }
+                        },
+                        backgroundColor: Colors.grey[200],
+                        selectedColor: Colors.green[200],
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  // Amount field
+                  TextField(
+                    controller: amountController,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Amount',
+                      prefixText: '\$',
+                      border: OutlineInputBorder(),
+                    ),
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 8),
+                  // Reference number (for cards/checks)
+                  if (selectedMethod == PaymentMethod.card ||
+                      selectedMethod == PaymentMethod.check)
+                    TextField(
+                      controller: referenceController,
+                      decoration: InputDecoration(
+                        labelText: selectedMethod == PaymentMethod.card
+                            ? 'Card Reference (optional)'
+                            : 'Check Number (optional)',
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    final amount =
+                        double.tryParse(amountController.text) ?? 0.0;
+                    if (amount > 0) {
+                      _addPayment(
+                          selectedMethod,
+                          amount,
+                          referenceController.text.trim().isEmpty
+                              ? null
+                              : referenceController.text.trim());
+                      Navigator.pop(context);
+                    }
+                  },
+                  child: const Text('Add'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _getPaymentMethodName(PaymentMethod method) {
+    switch (method) {
+      case PaymentMethod.cash:
+        return 'Cash';
+      case PaymentMethod.card:
+        return 'Card';
+      case PaymentMethod.check:
+        return 'Check';
+      case PaymentMethod.other:
+        return 'Other';
+    }
+  }
+
+  void _addPayment(
+      PaymentMethod method, double amount, String? reference) async {
+    if (_currentTransaction == null) return;
+
+    final payment = Payment(
+      id: 'payment_${DateTime.now().millisecondsSinceEpoch}',
+      transactionId: _currentTransaction!.id,
+      method: method,
+      amount: amount,
+      paymentDate: DateTime.now(),
+      referenceNumber: reference,
+      createdAt: DateTime.now(),
+    );
+
+    setState(() {
+      _payments.add(payment);
+      // Also update the current transaction object immediately
+      _currentTransaction = _currentTransaction!.copyWith(
+        payments: _payments,
+        updatedAt: DateTime.now(),
+      );
+    });
+
+    // Save the payment immediately to ensure persistence
+    try {
+      await ManagementService.savePayment(payment);
+      print(
+          'Payment saved successfully: ${payment.methodName} - ${payment.formattedAmount}');
+    } catch (e) {
+      print('Error saving payment: $e');
+      // Continue anyway - the payment is in local state and will be saved with transaction
+    }
+
+    // Also save the updated transaction to cache
+    try {
+      await ManagementService.updateTransaction(_currentTransaction!);
+      print('Updated transaction with new payment');
+    } catch (e) {
+      print('Error updating transaction with new payment: $e');
+    }
+
+    _calculateTotal();
+    _updateTransactionStatus();
+  }
+
+  void _removePayment(int index) async {
+    if (index >= _payments.length) return;
+
+    final payment = _payments[index];
+
+    setState(() {
+      _payments.removeAt(index);
+      // Also update the current transaction object immediately
+      _currentTransaction = _currentTransaction!.copyWith(
+        payments: _payments,
+        updatedAt: DateTime.now(),
+      );
+    });
+
+    // Delete the payment from the service
+    try {
+      await ManagementService.deletePayment(payment.id);
+      print(
+          'Payment deleted successfully: ${payment.methodName} - ${payment.formattedAmount}');
+    } catch (e) {
+      print('Error deleting payment: $e');
+      // Continue anyway - the payment is removed from local state
+    }
+
+    // Also save the updated transaction to cache
+    try {
+      await ManagementService.updateTransaction(_currentTransaction!);
+      print('Updated transaction after removing payment');
+    } catch (e) {
+      print('Error updating transaction after removing payment: $e');
+    }
+
+    _calculateTotal();
+    _updateTransactionStatus();
+  }
+
+  void _clearAllPayments() async {
+    final paymentsToDelete = List<Payment>.from(_payments);
+
+    setState(() {
+      _payments.clear();
+      // Also update the current transaction object immediately
+      _currentTransaction = _currentTransaction!.copyWith(
+        payments: _payments,
+        updatedAt: DateTime.now(),
+      );
+    });
+
+    // Delete all payments from the service
+    for (final payment in paymentsToDelete) {
+      try {
+        await ManagementService.deletePayment(payment.id);
+        print(
+            'Payment cleared: ${payment.methodName} - ${payment.formattedAmount}');
+      } catch (e) {
+        print('Error clearing payment: $e');
+        // Continue with other payments
+      }
+    }
+
+    // Also save the updated transaction to cache
+    try {
+      await ManagementService.updateTransaction(_currentTransaction!);
+      print('Updated transaction after clearing all payments');
+    } catch (e) {
+      print('Error updating transaction after clearing all payments: $e');
+    }
+
+    _calculateTotal();
+    _updateTransactionStatus();
   }
 }
