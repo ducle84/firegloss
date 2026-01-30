@@ -238,16 +238,11 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
             'No cached transaction update found for ${_currentTransaction!.id}');
       }
 
-      // Load transaction lines (items) - use passed lines if available, otherwise fetch
+      // Load transaction lines (items) - always fetch fresh data from backend
       List<TransactionLine> lines = [];
-      if (widget.existingTransactionLines != null) {
-        lines = widget.existingTransactionLines!;
-        print('Using pre-loaded transaction lines: ${lines.length} items');
-      } else {
-        lines = await ManagementService.getTransactionLines(
-            _currentTransaction!.id);
-        print('Fetched transaction lines from server: ${lines.length} items');
-      }
+      lines =
+          await ManagementService.getTransactionLines(_currentTransaction!.id);
+      print('Fetched ${lines.length} transaction lines from backend/cache');
 
       // Wait for employees to be loaded if needed
       int attempts = 0;
@@ -554,7 +549,17 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         _lines.removeWhere((l) => l.id == line.id);
         _calculateTotal();
       });
-      // TODO: Add method to remove transaction line from backend
+      // Remove the line from backend cache when quantity becomes 0
+      if (_currentTransaction != null) {
+        try {
+          await ManagementService.removeTransactionLine(
+              _currentTransaction!.id, line.id);
+          print(
+              'Removed transaction line from backend (quantity 0): ${line.itemName}');
+        } catch (e) {
+          print('Error removing transaction line from backend: $e');
+        }
+      }
       return;
     }
 
@@ -1711,14 +1716,32 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
   }
 
   void _removeItem(TransactionLine line) async {
+    print('_removeItem called for: ${line.id} - ${line.itemName}');
+    print('Lines before removal: ${_lines.length}');
+    for (int i = 0; i < _lines.length; i++) {
+      print('  Line ${i + 1}: ${_lines[i].id} - ${_lines[i].itemName}');
+    }
+
     setState(() {
       _lines.removeWhere((l) => l.id == line.id);
       _calculateTotal();
     });
 
-    // TODO: Add method to remove transaction line from backend
-    // For now, the line will be removed from memory but we don't have a remove API
-    print('Removed transaction line: ${line.itemName}');
+    print('Lines after removal: ${_lines.length}');
+    for (int i = 0; i < _lines.length; i++) {
+      print('  Line ${i + 1}: ${_lines[i].id} - ${_lines[i].itemName}');
+    }
+
+    // Remove the line from backend cache
+    if (_currentTransaction != null) {
+      try {
+        await ManagementService.removeTransactionLine(
+            _currentTransaction!.id, line.id);
+        print('Removed transaction line from backend: ${line.itemName}');
+      } catch (e) {
+        print('Error removing transaction line from backend: $e');
+      }
+    }
   }
 
   void _saveTransaction() async {
@@ -1769,8 +1792,24 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         }
       }
 
-      // Transaction lines are already saved when items are added/updated
-      // No need to re-save them here to avoid duplicates
+      // Sync all current transaction lines to ensure deleted ones are not restored
+      if (_currentTransaction != null) {
+        try {
+          print(
+              'About to sync transaction lines for ${_currentTransaction!.id}:');
+          print('  Current _lines count: ${_lines.length}');
+          for (int i = 0; i < _lines.length; i++) {
+            print('  Line ${i + 1}: ${_lines[i].id} - ${_lines[i].itemName}');
+          }
+
+          await ManagementService.setTransactionLines(
+              _currentTransaction!.id, _lines);
+          print(
+              'Successfully synced ${_lines.length} transaction lines to backend');
+        } catch (e) {
+          print('Error syncing transaction lines: $e');
+        }
+      }
 
       // Try to save transaction header to backend
       await ManagementService.updateTransaction(updatedTransaction);

@@ -16,6 +16,9 @@ class ManagementService {
   // In-memory storage for updated transactions (for UI testing when backend is not available)
   static final Map<String, TransactionHeader> _transactionUpdatesCache = {};
 
+  // Track deleted transactions to prevent them from appearing in merged results
+  static final Set<String> _deletedTransactionIds = {};
+
   // Company Services
   static Future<List<Company>> getCompanies() async {
     try {
@@ -319,7 +322,8 @@ class ManagementService {
         final mergedTransactions = _getMergedTransactions();
         print('Returning ${mergedTransactions.length} merged transactions');
         for (final transaction in mergedTransactions) {
-          print('  Transaction ${transaction.transactionNumber}: ${transaction.payments.length} payments');
+          print(
+              '  Transaction ${transaction.transactionNumber}: ${transaction.payments.length} payments');
         }
         return mergedTransactions;
       }
@@ -335,9 +339,11 @@ class ManagementService {
         print('Error getting transactions: $e');
       }
       final mergedTransactions = _getMergedTransactions();
-      print('Returning ${mergedTransactions.length} merged transactions from catch block');
+      print(
+          'Returning ${mergedTransactions.length} merged transactions from catch block');
       for (final transaction in mergedTransactions) {
-        print('  Transaction ${transaction.transactionNumber}: ${transaction.payments.length} payments');
+        print(
+            '  Transaction ${transaction.transactionNumber}: ${transaction.payments.length} payments');
       }
       return mergedTransactions;
     }
@@ -523,45 +529,130 @@ class ManagementService {
       final response =
           await http.delete(Uri.parse('$baseUrl/transactions/$transactionId'));
       final data = json.decode(response.body);
-      return data['success'] ?? false;
+      bool success = data['success'] ?? false;
+
+      if (success) {
+        // Remove from local caches
+        _removeTransactionFromCache(transactionId);
+      }
+
+      return success;
     } catch (e) {
       print('Error deleting transaction: $e');
       print(
           'Note: Transaction endpoints not yet implemented in backend. Mocking success.');
+
+      // For UI testing, remove from local caches even when backend fails
+      _removeTransactionFromCache(transactionId);
+
       return true; // Mock success for frontend testing
     }
   }
 
+  // Helper method to remove transaction from all local caches
+  static void _removeTransactionFromCache(String transactionId) {
+    // Remove from transaction updates cache
+    _transactionUpdatesCache.remove(transactionId);
+
+    // Remove transaction lines associated with this transaction
+    _transactionLinesCache.remove(transactionId);
+
+    // Add to a deleted transactions set to prevent it from showing up in merged results
+    _deletedTransactionIds.add(transactionId);
+
+    print('Removed transaction $transactionId from all local caches');
+  }
+
+  // Method to clear all cached data (useful for testing/debugging)
+  static void clearAllCaches() {
+    _transactionLinesCache.clear();
+    _transactionUpdatesCache.clear();
+    _deletedTransactionIds.clear();
+    print('Cleared all transaction caches');
+  }
+
   static Future<List<TransactionLine>> getTransactionLines(
       String transactionId) async {
+    print('getTransactionLines called for: $transactionId');
+
+    // Check cache first - if we have cached data, use it as it's more recent
+    if (_transactionLinesCache.containsKey(transactionId)) {
+      final cachedLines = _transactionLinesCache[transactionId]!;
+      print(
+          'Using cached data: ${cachedLines.length} lines for $transactionId');
+      for (int i = 0; i < cachedLines.length; i++) {
+        print(
+            '  Cached Line ${i + 1}: ${cachedLines[i].id} - ${cachedLines[i].itemName}');
+      }
+      return List<TransactionLine>.from(cachedLines);
+    }
+
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/transactions/$transactionId/lines'));
+      print('HTTP response status: ${response.statusCode}');
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success']) {
           final List<dynamic> lines = data['data']['lines'];
-          return lines.map((line) => TransactionLine.fromJson(line)).toList();
+          print('Backend returned ${lines.length} lines successfully');
+          final transactionLines =
+              lines.map((line) => TransactionLine.fromJson(line)).toList();
+
+          // Initialize cache with backend data for future modifications
+          _transactionLinesCache[transactionId] =
+              List<TransactionLine>.from(transactionLines);
+          print(
+              'Initialized cache with ${transactionLines.length} lines from backend');
+
+          return transactionLines;
+        } else {
+          print('Backend response success=false');
         }
+      } else {
+        print('Backend HTTP error: ${response.statusCode}');
       }
       throw Exception('Failed to load transaction lines');
     } catch (e) {
       print('Error getting transaction lines: $e');
 
       // Check in-memory cache first
+      print('Checking cache for transaction ID: $transactionId');
+      print('Cache keys: ${_transactionLinesCache.keys.toList()}');
+
       if (_transactionLinesCache.containsKey(transactionId)) {
         final cachedLines = _transactionLinesCache[transactionId]!;
         print(
-            'Found ${cachedLines.length} cached transaction lines for $transactionId');
+            'Found ${cachedLines.length} cached transaction lines for $transactionId:');
+        for (int i = 0; i < cachedLines.length; i++) {
+          print(
+              '  Cached Line ${i + 1}: ${cachedLines[i].id} - ${cachedLines[i].itemName}');
+        }
         return List<TransactionLine>.from(cachedLines);
+      } else {
+        print('No cache found for transaction ID: $transactionId');
       }
 
-      // Fall back to sample transaction lines for UI testing
-      return _getSampleTransactionLines(transactionId);
+      // Fall back to sample transaction lines for UI testing ONLY if no cache exists
+      final sampleLines = _getSampleTransactionLines(transactionId);
+      if (sampleLines.isNotEmpty) {
+        // Initialize cache with sample data so future modifications work correctly
+        _transactionLinesCache[transactionId] =
+            List<TransactionLine>.from(sampleLines);
+        print(
+            'Initialized cache with ${sampleLines.length} sample transaction lines for $transactionId');
+        return sampleLines;
+      }
+
+      // If no sample data exists for this transaction, return empty list
+      print('No cached or sample transaction lines found for $transactionId');
+      return [];
     }
   }
 
   static Future<bool> addTransactionLine(TransactionLine line) async {
+    print(
+        'addTransactionLine called for: ${line.transactionId} - ${line.id} - ${line.itemName}');
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/transactions/${line.transactionId}/lines'),
@@ -617,6 +708,65 @@ class ManagementService {
     }
   }
 
+  static Future<bool> removeTransactionLine(
+      String transactionId, String lineId) async {
+    try {
+      final response = await http.delete(
+          Uri.parse('$baseUrl/transactions/$transactionId/lines/$lineId'));
+      final data = json.decode(response.body);
+      return data['success'] ?? false;
+    } catch (e) {
+      print('Error removing transaction line: $e');
+
+      // Remove from memory cache for UI testing
+      if (_transactionLinesCache.containsKey(transactionId)) {
+        final existingLines = _transactionLinesCache[transactionId]!;
+        print(
+            'Before removal: ${existingLines.length} lines in cache for $transactionId');
+        for (int i = 0; i < existingLines.length; i++) {
+          print(
+              '  Line ${i + 1}: ${existingLines[i].id} - ${existingLines[i].itemName}');
+        }
+
+        existingLines.removeWhere((line) => line.id == lineId);
+
+        print('Removed transaction line $lineId from cache for $transactionId');
+        print(
+            'After removal: ${existingLines.length} lines remaining in cache:');
+        for (int i = 0; i < existingLines.length; i++) {
+          print(
+              '  Line ${i + 1}: ${existingLines[i].id} - ${existingLines[i].itemName}');
+        }
+        return true;
+      }
+      return false;
+    }
+  }
+
+  static Future<bool> setTransactionLines(
+      String transactionId, List<TransactionLine> lines) async {
+    try {
+      print('Setting transaction lines for $transactionId:');
+      print('  Incoming lines count: ${lines.length}');
+      for (int i = 0; i < lines.length; i++) {
+        print('  Line ${i + 1}: ${lines[i].id} - ${lines[i].itemName}');
+      }
+
+      // For now, store all lines in cache to replace existing ones
+      _transactionLinesCache[transactionId] = List<TransactionLine>.from(lines);
+
+      print(
+          'Successfully set ${lines.length} transaction lines for $transactionId in cache');
+
+      // In a real implementation, this would sync with the backend
+      // by sending the complete list of lines to replace the existing ones
+      return true;
+    } catch (e) {
+      print('Error setting transaction lines: $e');
+      return false;
+    }
+  }
+
   static Future<TransactionHeader?> getCachedTransactionUpdate(
       String transactionId) async {
     print('Looking for cached transaction with ID: $transactionId');
@@ -658,14 +808,18 @@ class ManagementService {
     final sampleTransactions = _getSampleTransactions();
     final Map<String, TransactionHeader> mergedMap = {};
 
-    // Start with sample transactions
+    // Start with sample transactions, excluding deleted ones
     for (final transaction in sampleTransactions) {
-      mergedMap[transaction.id] = transaction;
+      if (!_deletedTransactionIds.contains(transaction.id)) {
+        mergedMap[transaction.id] = transaction;
+      }
     }
 
-    // Override with any cached updates
+    // Override with any cached updates, excluding deleted ones
     for (final entry in _transactionUpdatesCache.entries) {
-      mergedMap[entry.key] = entry.value;
+      if (!_deletedTransactionIds.contains(entry.key)) {
+        mergedMap[entry.key] = entry.value;
+      }
     }
 
     return mergedMap.values.toList();
@@ -739,10 +893,12 @@ class ManagementService {
 
   static List<TransactionLine> _getSampleTransactionLines(
       String transactionId) {
+    print('_getSampleTransactionLines called for: $transactionId');
     final now = DateTime.now();
 
     switch (transactionId) {
       case 'txn_sample_1':
+        print('Returning sample lines for txn_sample_1');
         return [
           TransactionLine(
             id: 'line_1_1',
@@ -863,6 +1019,8 @@ class ManagementService {
         ];
 
       default:
+        print(
+            'No sample data for transaction ID: $transactionId, returning empty list');
         return [];
     }
   }
