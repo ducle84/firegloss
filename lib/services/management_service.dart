@@ -31,8 +31,6 @@ class ManagementService {
             try {
               return Company.fromJson(company);
             } catch (e) {
-              print('Error parsing company: $e');
-              print('Company data: $company');
               rethrow;
             }
           }).toList();
@@ -40,25 +38,20 @@ class ManagementService {
       }
       throw Exception('Failed to load companies: ${response.statusCode}');
     } catch (e) {
-      print('Error getting companies: $e');
       return [];
     }
   }
 
   static Future<bool> createCompany(Company company) async {
     try {
-      print('Creating company: ${company.toJson()}');
       final response = await http.post(
         Uri.parse('$baseUrl/companies'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode(company.toJson()),
       );
-      print(
-          'Create company response: ${response.statusCode} - ${response.body}');
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error creating company: $e');
       return false;
     }
   }
@@ -73,7 +66,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error updating company: $e');
       return false;
     }
   }
@@ -85,7 +77,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error deleting company: $e');
       return false;
     }
   }
@@ -105,7 +96,6 @@ class ManagementService {
       }
       throw Exception('Failed to load employees');
     } catch (e) {
-      print('Error getting employees: $e');
       return [];
     }
   }
@@ -118,7 +108,6 @@ class ManagementService {
           .where((employee) => employee.belongsToCompany(companyId))
           .toList();
     } catch (e) {
-      print('Error getting employees for company: $e');
       return [];
     }
   }
@@ -130,7 +119,6 @@ class ManagementService {
       final companyEmployees = await getEmployeesByCompany(companyId);
       return companyEmployees.where((employee) => employee.isEmployed).toList();
     } catch (e) {
-      print('Error getting active employees for company: $e');
       return [];
     }
   }
@@ -145,7 +133,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error creating employee: $e');
       return false;
     }
   }
@@ -160,7 +147,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error updating employee: $e');
       return false;
     }
   }
@@ -172,7 +158,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error deleting employee: $e');
       return false;
     }
   }
@@ -192,7 +177,6 @@ class ManagementService {
       }
       throw Exception('Failed to load categories');
     } catch (e) {
-      print('Error getting categories: $e');
       return [];
     }
   }
@@ -207,7 +191,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error creating category: $e');
       return false;
     }
   }
@@ -222,7 +205,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error updating category: $e');
       return false;
     }
   }
@@ -234,7 +216,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error deleting category: $e');
       return false;
     }
   }
@@ -252,7 +233,6 @@ class ManagementService {
       }
       throw Exception('Failed to load items');
     } catch (e) {
-      print('Error getting items: $e');
       return [];
     }
   }
@@ -267,7 +247,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error creating item: $e');
       return false;
     }
   }
@@ -282,7 +261,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error updating item: $e');
       return false;
     }
   }
@@ -293,14 +271,12 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error deleting item: $e');
       return false;
     }
   }
 
   // Transaction Services
   static Future<List<TransactionHeader>> getTransactions() async {
-    print('Getting transactions...');
     try {
       final response = await http.get(Uri.parse('$baseUrl/transactions'));
       if (response.statusCode == 200) {
@@ -310,41 +286,20 @@ class ManagementService {
           final transactionList = transactions
               .map((transaction) => TransactionHeader.fromJson(transaction))
               .toList();
-          print('Loaded ${transactionList.length} transactions from backend');
           return transactionList;
         }
       }
 
       // Handle 404 specifically (endpoint not implemented)
       if (response.statusCode == 404) {
-        print(
-            'Transaction endpoints not implemented in backend (404). Using mock data for UI testing.');
         final mergedTransactions = _getMergedTransactions();
-        print('Returning ${mergedTransactions.length} merged transactions');
-        for (final transaction in mergedTransactions) {
-          print(
-              '  Transaction ${transaction.transactionNumber}: ${transaction.payments.length} payments');
-        }
         return mergedTransactions;
       }
 
       throw Exception(
           'Failed to load transactions: Status ${response.statusCode}');
     } catch (e) {
-      // Check if it's a connection error or 404
-      if (e.toString().contains('404')) {
-        print(
-            'Transaction endpoints not implemented in backend. Using mock data for UI testing.');
-      } else {
-        print('Error getting transactions: $e');
-      }
       final mergedTransactions = _getMergedTransactions();
-      print(
-          'Returning ${mergedTransactions.length} merged transactions from catch block');
-      for (final transaction in mergedTransactions) {
-        print(
-            '  Transaction ${transaction.transactionNumber}: ${transaction.payments.length} payments');
-      }
       return mergedTransactions;
     }
   }
@@ -366,8 +321,6 @@ class ManagementService {
 
       // Handle 404 specifically (endpoint not implemented)
       if (response.statusCode == 404) {
-        print(
-            'Transaction creation endpoint not implemented (404). Creating mock transaction for UI testing.');
         return TransactionHeader(
           id: 'mock_${DateTime.now().millisecondsSinceEpoch}',
           companyId: transaction.companyId,
@@ -390,7 +343,6 @@ class ManagementService {
           updatedAt: transaction.updatedAt,
         );
       } else {
-        print('Failed to create transaction: Status ${response.statusCode}');
         return TransactionHeader(
           id: 'mock_${DateTime.now().millisecondsSinceEpoch}',
           companyId: transaction.companyId,
@@ -414,15 +366,6 @@ class ManagementService {
         );
       }
     } catch (e) {
-      // Check if it's a connection error or 404
-      if (e.toString().contains('404')) {
-        print(
-            'Transaction creation endpoint not implemented. Creating mock transaction for UI testing.');
-      } else {
-        print('Error creating transaction: $e');
-        print('Creating mock transaction for UI testing.');
-      }
-
       // Return a mock transaction with an ID for frontend testing
       // In production, this would be handled properly with a database
       return TransactionHeader(
@@ -450,18 +393,8 @@ class ManagementService {
   }
 
   static Future<bool> updateTransaction(TransactionHeader transaction) async {
-    print('ManagementService.updateTransaction called for: ${transaction.id}');
-    print('  Transaction has ${transaction.payments.length} payments');
-    for (int i = 0; i < transaction.payments.length; i++) {
-      final payment = transaction.payments[i];
-      print(
-          '    Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-    }
-
     // Always cache the transaction first, especially if it has payments
     _transactionUpdatesCache[transaction.id] = transaction;
-    print(
-        'Cached transaction: ${transaction.id} with ${transaction.payments.length} payments');
 
     try {
       final response = await http.put(
@@ -472,54 +405,18 @@ class ManagementService {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('Transaction update successful from backend');
         return data['success'] ?? false;
       }
 
       // Handle 404 specifically (endpoint not implemented)
       if (response.statusCode == 404) {
-        print(
-            'Transaction update endpoint not implemented (404). Caching update for UI testing.');
         _transactionUpdatesCache[transaction.id] = transaction;
-        print(
-            'Cached transaction: ${transaction.id} with ${transaction.payments.length} payments');
-        print(
-            'Cache now contains ${_transactionUpdatesCache.length} transactions:');
-        for (final entry in _transactionUpdatesCache.entries) {
-          print('  ${entry.key}: ${entry.value.payments.length} payments');
-        }
         return true;
       }
 
-      print('Transaction update failed with status: ${response.statusCode}');
       return false;
     } catch (e) {
-      // Check if it's a connection error or 404
-      if (e.toString().contains('404')) {
-        print(
-            'Transaction update endpoint not implemented. Caching update for UI testing.');
-      } else {
-        print('Error updating transaction: $e (caching update for UI testing)');
-      }
       _transactionUpdatesCache[transaction.id] = transaction;
-      print(
-          'Cached transaction update: ${transaction.transactionNumber} with discount: \$${transaction.discount.toStringAsFixed(2)}, total: \$${transaction.total.toStringAsFixed(2)}, payments: ${transaction.payments.length}');
-      for (int i = 0; i < transaction.payments.length; i++) {
-        final payment = transaction.payments[i];
-        print(
-            '  Saving Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-      }
-      print(
-          'Cache now contains ${_transactionUpdatesCache.length} transactions:');
-      for (final entry in _transactionUpdatesCache.entries) {
-        print(
-            '  ${entry.key}: ${entry.value.transactionNumber} (discount: \$${entry.value.discount.toStringAsFixed(2)}, payments: ${entry.value.payments.length})');
-        for (int j = 0; j < entry.value.payments.length; j++) {
-          final payment = entry.value.payments[j];
-          print(
-              '    Cache Payment ${j + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-        }
-      }
       return true; // Mock success for frontend testing
     }
   }
@@ -538,10 +435,6 @@ class ManagementService {
 
       return success;
     } catch (e) {
-      print('Error deleting transaction: $e');
-      print(
-          'Note: Transaction endpoints not yet implemented in backend. Mocking success.');
-
       // For UI testing, remove from local caches even when backend fails
       _removeTransactionFromCache(transactionId);
 
@@ -559,8 +452,6 @@ class ManagementService {
 
     // Add to a deleted transactions set to prevent it from showing up in merged results
     _deletedTransactionIds.add(transactionId);
-
-    print('Removed transaction $transactionId from all local caches');
   }
 
   // Method to clear all cached data (useful for testing/debugging)
@@ -568,69 +459,39 @@ class ManagementService {
     _transactionLinesCache.clear();
     _transactionUpdatesCache.clear();
     _deletedTransactionIds.clear();
-    print('Cleared all transaction caches');
   }
 
   static Future<List<TransactionLine>> getTransactionLines(
       String transactionId) async {
-    print('getTransactionLines called for: $transactionId');
-
     // Check cache first - if we have cached data, use it as it's more recent
     if (_transactionLinesCache.containsKey(transactionId)) {
       final cachedLines = _transactionLinesCache[transactionId]!;
-      print(
-          'Using cached data: ${cachedLines.length} lines for $transactionId');
-      for (int i = 0; i < cachedLines.length; i++) {
-        print(
-            '  Cached Line ${i + 1}: ${cachedLines[i].id} - ${cachedLines[i].itemName}');
-      }
       return List<TransactionLine>.from(cachedLines);
     }
 
     try {
       final response = await http
           .get(Uri.parse('$baseUrl/transactions/$transactionId/lines'));
-      print('HTTP response status: ${response.statusCode}');
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (data['success']) {
           final List<dynamic> lines = data['data']['lines'];
-          print('Backend returned ${lines.length} lines successfully');
           final transactionLines =
               lines.map((line) => TransactionLine.fromJson(line)).toList();
 
           // Initialize cache with backend data for future modifications
           _transactionLinesCache[transactionId] =
               List<TransactionLine>.from(transactionLines);
-          print(
-              'Initialized cache with ${transactionLines.length} lines from backend');
 
           return transactionLines;
-        } else {
-          print('Backend response success=false');
         }
-      } else {
-        print('Backend HTTP error: ${response.statusCode}');
       }
       throw Exception('Failed to load transaction lines');
     } catch (e) {
-      print('Error getting transaction lines: $e');
-
       // Check in-memory cache first
-      print('Checking cache for transaction ID: $transactionId');
-      print('Cache keys: ${_transactionLinesCache.keys.toList()}');
-
       if (_transactionLinesCache.containsKey(transactionId)) {
         final cachedLines = _transactionLinesCache[transactionId]!;
-        print(
-            'Found ${cachedLines.length} cached transaction lines for $transactionId:');
-        for (int i = 0; i < cachedLines.length; i++) {
-          print(
-              '  Cached Line ${i + 1}: ${cachedLines[i].id} - ${cachedLines[i].itemName}');
-        }
         return List<TransactionLine>.from(cachedLines);
-      } else {
-        print('No cache found for transaction ID: $transactionId');
       }
 
       // Fall back to sample transaction lines for UI testing ONLY if no cache exists
@@ -639,20 +500,15 @@ class ManagementService {
         // Initialize cache with sample data so future modifications work correctly
         _transactionLinesCache[transactionId] =
             List<TransactionLine>.from(sampleLines);
-        print(
-            'Initialized cache with ${sampleLines.length} sample transaction lines for $transactionId');
         return sampleLines;
       }
 
       // If no sample data exists for this transaction, return empty list
-      print('No cached or sample transaction lines found for $transactionId');
       return [];
     }
   }
 
   static Future<bool> addTransactionLine(TransactionLine line) async {
-    print(
-        'addTransactionLine called for: ${line.transactionId} - ${line.id} - ${line.itemName}');
     try {
       final response = await http.post(
         Uri.parse('$baseUrl/transactions/${line.transactionId}/lines'),
@@ -662,8 +518,6 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error adding transaction line: $e');
-
       // Store in memory cache for UI testing
       if (!_transactionLinesCache.containsKey(line.transactionId)) {
         _transactionLinesCache[line.transactionId] = [];
@@ -679,7 +533,6 @@ class ManagementService {
       if (existingIdIndex >= 0) {
         // Update existing line with same ID
         existingLines[existingIdIndex] = line;
-        print('Updated existing line with ID ${line.id}: ${line.itemName}');
       } else {
         // Check if same item with same technician already exists (different line ID)
         final existingItemIndex = existingLines.indexWhere((existingLine) =>
@@ -694,16 +547,12 @@ class ManagementService {
             updatedAt: line.updatedAt,
           );
           existingLines[existingItemIndex] = updatedLine;
-          print('Updated quantity for existing item: ${line.itemName}');
         } else {
           // Add completely new line
           existingLines.add(line);
-          print('Added new transaction line: ${line.itemName}');
         }
       }
 
-      print(
-          'Transaction lines in cache for ${line.transactionId}: ${existingLines.length} items');
       return true;
     }
   }
@@ -716,27 +565,10 @@ class ManagementService {
       final data = json.decode(response.body);
       return data['success'] ?? false;
     } catch (e) {
-      print('Error removing transaction line: $e');
-
       // Remove from memory cache for UI testing
       if (_transactionLinesCache.containsKey(transactionId)) {
         final existingLines = _transactionLinesCache[transactionId]!;
-        print(
-            'Before removal: ${existingLines.length} lines in cache for $transactionId');
-        for (int i = 0; i < existingLines.length; i++) {
-          print(
-              '  Line ${i + 1}: ${existingLines[i].id} - ${existingLines[i].itemName}');
-        }
-
         existingLines.removeWhere((line) => line.id == lineId);
-
-        print('Removed transaction line $lineId from cache for $transactionId');
-        print(
-            'After removal: ${existingLines.length} lines remaining in cache:');
-        for (int i = 0; i < existingLines.length; i++) {
-          print(
-              '  Line ${i + 1}: ${existingLines[i].id} - ${existingLines[i].itemName}');
-        }
         return true;
       }
       return false;
@@ -746,54 +578,20 @@ class ManagementService {
   static Future<bool> setTransactionLines(
       String transactionId, List<TransactionLine> lines) async {
     try {
-      print('Setting transaction lines for $transactionId:');
-      print('  Incoming lines count: ${lines.length}');
-      for (int i = 0; i < lines.length; i++) {
-        print('  Line ${i + 1}: ${lines[i].id} - ${lines[i].itemName}');
-      }
-
       // For now, store all lines in cache to replace existing ones
       _transactionLinesCache[transactionId] = List<TransactionLine>.from(lines);
-
-      print(
-          'Successfully set ${lines.length} transaction lines for $transactionId in cache');
 
       // In a real implementation, this would sync with the backend
       // by sending the complete list of lines to replace the existing ones
       return true;
     } catch (e) {
-      print('Error setting transaction lines: $e');
       return false;
     }
   }
 
   static Future<TransactionHeader?> getCachedTransactionUpdate(
       String transactionId) async {
-    print('Looking for cached transaction with ID: $transactionId');
-    print('Cache contains ${_transactionUpdatesCache.length} transactions:');
-    for (final entry in _transactionUpdatesCache.entries) {
-      print(
-          '  ${entry.key}: ${entry.value.transactionNumber} (discount: \$${entry.value.discount.toStringAsFixed(2)}, payments: ${entry.value.payments.length})');
-      for (int i = 0; i < entry.value.payments.length; i++) {
-        final payment = entry.value.payments[i];
-        print(
-            '    Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-      }
-    }
-
     final result = _transactionUpdatesCache[transactionId];
-    if (result != null) {
-      print(
-          'Found cached transaction: ${result.transactionNumber} with discount: \$${result.discount.toStringAsFixed(2)}, payments: ${result.payments.length}');
-      for (int i = 0; i < result.payments.length; i++) {
-        final payment = result.payments[i];
-        print(
-            '  Cached Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-      }
-    } else {
-      print('No cached transaction found for ID: $transactionId');
-    }
-
     return result;
   }
 
@@ -893,12 +691,10 @@ class ManagementService {
 
   static List<TransactionLine> _getSampleTransactionLines(
       String transactionId) {
-    print('_getSampleTransactionLines called for: $transactionId');
     final now = DateTime.now();
 
     switch (transactionId) {
       case 'txn_sample_1':
-        print('Returning sample lines for txn_sample_1');
         return [
           TransactionLine(
             id: 'line_1_1',
@@ -1019,8 +815,6 @@ class ManagementService {
         ];
 
       default:
-        print(
-            'No sample data for transaction ID: $transactionId, returning empty list');
         return [];
     }
   }
@@ -1041,14 +835,11 @@ class ManagementService {
 
       // Handle 404 specifically (endpoint not implemented)
       if (response.statusCode == 404) {
-        print(
-            'Payment save endpoint not implemented (404). Mocking success for UI testing.');
         return true;
       }
 
       return false;
     } catch (e) {
-      print('Error saving payment: $e (mocking success for UI testing)');
       return true; // Mock success for frontend testing
     }
   }
@@ -1067,14 +858,11 @@ class ManagementService {
 
       // Handle 404 specifically (endpoint not implemented)
       if (response.statusCode == 404) {
-        print(
-            'Payment load endpoint not implemented (404). Returning empty list for UI testing.');
         return [];
       }
 
       return [];
     } catch (e) {
-      print('Error loading payments: $e (returning empty list for UI testing)');
       return []; // Return empty list for frontend testing
     }
   }
@@ -1092,14 +880,11 @@ class ManagementService {
 
       // Handle 404 specifically (endpoint not implemented)
       if (response.statusCode == 404) {
-        print(
-            'Payment delete endpoint not implemented (404). Mocking success for UI testing.');
         return true;
       }
 
       return false;
     } catch (e) {
-      print('Error deleting payment: $e (mocking success for UI testing)');
       return true; // Mock success for frontend testing
     }
   }

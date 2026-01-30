@@ -50,7 +50,7 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 
   Future<void> _loadCurrentPasscode() async {
-    final passcode = await SettingsService.getPasscode();
+    await SettingsService.getPasscode();
     final isDefault = await SettingsService.isDefaultPasscode();
     setState(() {
       _isDefaultPasscode = isDefault;

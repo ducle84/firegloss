@@ -38,7 +38,7 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
   double _discountAmount = 0.0;
   String _discountType = 'none'; // 'none', 'percent', 'flat'
   double _discountValue = 0.0;
-  List<Payment> _payments = [];
+  final List<Payment> _payments = [];
   double _paidAmount = 0.0;
   Employee? _selectedTechnician;
   final TextEditingController _paymentController = TextEditingController();
@@ -78,13 +78,11 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
 
   void _loadAllEmployees() async {
     try {
-      print('Loading all employees from Firebase');
       // For now, we'll load from a default company
       // In production, this would be based on user's authenticated company
       final companies = await ManagementService.getCompanies();
 
       if (companies.isEmpty) {
-        print('No companies found');
         setState(() {
           _technicians.clear();
         });
@@ -92,14 +90,9 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       }
 
       final firstCompany = companies.first;
-      print('Using company: ${firstCompany.name} (${firstCompany.id})');
 
       final employees =
           await ManagementService.getEmployeesByCompany(firstCompany.id);
-
-      print('Loaded ${employees.length} employees from Firebase');
-      employees.forEach((emp) => print(
-          'Employee: ${emp.fullName} - ${emp.role} - Active: ${emp.isActive}'));
 
       setState(() {
         _allEmployees.clear();
@@ -114,25 +107,15 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
                     emp.role == EmployeeRole.manager))
             .toList());
 
-        print('Filtered to ${_technicians.length} available technicians');
-        _technicians.forEach(
-            (tech) => print('Technician: ${tech.fullName} - ${tech.role}'));
-
         // Only auto-select first technician if no default was provided
         if (_technicians.isNotEmpty &&
             widget.defaultTechnician == null &&
             _selectedTechnician == null) {
           _selectedTechnician = _technicians.first;
           _defaultTechnician = _technicians.first;
-          print(
-              'Auto-selected first technician: ${_selectedTechnician!.fullName}');
-        } else if (widget.defaultTechnician != null) {
-          print(
-              'Using provided default technician: ${widget.defaultTechnician!.fullName}');
         }
       });
     } catch (e) {
-      print('Error loading employees: $e');
       setState(() {
         _allEmployees.clear();
         _technicians.clear();
@@ -181,17 +164,10 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         _currentTransaction = createdTransaction;
         _isCreatingTransaction = false;
       });
-
-      print('Transaction created: ${_currentTransaction?.transactionNumber}');
     } catch (e) {
-      print('Error creating transaction: $e');
       setState(() {
         _isCreatingTransaction = false;
       });
-
-      // Don't show error snackbar for expected 404s - just log it
-      print(
-          'Transaction created locally for UI testing (backend not implemented)');
     }
   }
 
@@ -199,50 +175,19 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     if (_currentTransaction == null) return;
 
     try {
-      print('========== TRANSACTION LOADING DEBUG ==========');
-      print(
-          'Loading existing transaction data for: ${_currentTransaction!.transactionNumber}');
-      print('Initial transaction details from widget:');
-      print('  ID: ${_currentTransaction!.id}');
-      print('  Number: ${_currentTransaction!.transactionNumber}');
-      print('  Total: \$${_currentTransaction!.total.toStringAsFixed(2)}');
-      print(
-          '  Discount: \$${_currentTransaction!.discount.toStringAsFixed(2)}');
-      print(
-          '  Payment Method (legacy): ${_currentTransaction!.paymentMethod.toString()}');
-      print('  Payments array length: ${_currentTransaction!.payments.length}');
-      for (int i = 0; i < _currentTransaction!.payments.length; i++) {
-        final payment = _currentTransaction!.payments[i];
-        print(
-            '    Initial Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-      }
-      print(
-          'Looking up cached transaction with ID: ${_currentTransaction!.id}');
-
       // Check if there's a cached update for this transaction
       final cachedTransaction =
           await ManagementService.getCachedTransactionUpdate(
               _currentTransaction!.id);
       if (cachedTransaction != null) {
-        print(
-            'Found cached transaction update with discount: \$${cachedTransaction.discount.toStringAsFixed(2)}, total: \$${cachedTransaction.total.toStringAsFixed(2)}, payments: ${cachedTransaction.payments.length}');
-        for (int i = 0; i < cachedTransaction.payments.length; i++) {
-          final payment = cachedTransaction.payments[i];
-          print(
-              '  Cached Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-        }
         // Use the cached transaction as our current transaction
         _currentTransaction = cachedTransaction;
-      } else {
-        print(
-            'No cached transaction update found for ${_currentTransaction!.id}');
       }
 
       // Load transaction lines (items) - always fetch fresh data from backend
       List<TransactionLine> lines = [];
       lines =
           await ManagementService.getTransactionLines(_currentTransaction!.id);
-      print('Fetched ${lines.length} transaction lines from backend/cache');
 
       // Wait for employees to be loaded if needed
       int attempts = 0;
@@ -268,27 +213,10 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       List<Payment> payments = [];
       double paidAmount = 0.0;
 
-      print('Current transaction before payment loading:');
-      print('  ID: ${_currentTransaction!.id}');
-      print('  Number: ${_currentTransaction!.transactionNumber}');
-      print(
-          '  Payments in transaction object: ${_currentTransaction!.payments.length}');
-      for (int i = 0; i < _currentTransaction!.payments.length; i++) {
-        final payment = _currentTransaction!.payments[i];
-        print(
-            '    Transaction Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-      }
-
       // First try to get payments from the transaction object
       if (_currentTransaction!.payments.isNotEmpty) {
         payments = _currentTransaction!.payments;
         paidAmount = payments.fold(0.0, (sum, payment) => sum + payment.amount);
-        print('Loaded ${payments.length} payments from transaction object:');
-        for (int i = 0; i < payments.length; i++) {
-          final payment = payments[i];
-          print(
-              '  Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-        }
       } else {
         // Try to load payments from the payment service
         try {
@@ -299,12 +227,6 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
             payments = loadedPayments;
             paidAmount =
                 payments.fold(0.0, (sum, payment) => sum + payment.amount);
-            print('Loaded ${payments.length} payments from payment service:');
-            for (int i = 0; i < payments.length; i++) {
-              final payment = payments[i];
-              print(
-                  '  Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-            }
           } else {
             // Check if this transaction was explicitly saved with zero payments
             // by looking for it in the cache - if it's cached, respect the empty payments array
@@ -314,18 +236,11 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
 
             if (cachedForPaymentCheck != null) {
               // Transaction has been cached, so respect its payments array (even if empty)
-              print(
-                  'Transaction found in cache with ${cachedForPaymentCheck.payments.length} payments - respecting cached state');
               payments = cachedForPaymentCheck.payments;
               paidAmount =
                   payments.fold(0.0, (sum, payment) => sum + payment.amount);
-              if (payments.isEmpty) {
-                print('Transaction has explicitly zero payments');
-              }
             } else if (_currentTransaction!.total > 0) {
               // Only create legacy payment for truly legacy transactions (not in cache)
-              print(
-                  'No payments found and not in cache, creating legacy payment for total: \$${_currentTransaction!.total.toStringAsFixed(2)}');
               final legacyPayment = Payment(
                 id: 'payment_${DateTime.now().millisecondsSinceEpoch}',
                 transactionId: _currentTransaction!.id,
@@ -339,7 +254,6 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
             }
           }
         } catch (e) {
-          print('Error loading payments from service: $e');
           // Check if this transaction was explicitly saved with zero payments
           // by looking for it in the cache - if it's cached, respect the empty payments array
           final cachedForPaymentCheck =
@@ -348,19 +262,11 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
 
           if (cachedForPaymentCheck != null) {
             // Transaction has been cached, so respect its payments array (even if empty)
-            print(
-                'Transaction found in cache during error handling with ${cachedForPaymentCheck.payments.length} payments - respecting cached state');
             payments = cachedForPaymentCheck.payments;
             paidAmount =
                 payments.fold(0.0, (sum, payment) => sum + payment.amount);
-            if (payments.isEmpty) {
-              print(
-                  'Transaction has explicitly zero payments (from error handling)');
-            }
           } else if (_currentTransaction!.total > 0) {
             // Only create legacy payment for truly legacy transactions (not in cache)
-            print(
-                'Error loading payments and not in cache, falling back to legacy payment');
             final legacyPayment = Payment(
               id: 'payment_${DateTime.now().millisecondsSinceEpoch}',
               transactionId: _currentTransaction!.id,
@@ -415,9 +321,6 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
           discountType = 'custom';
           discountValue = discountAmount;
         }
-
-        print(
-            'Restored discount: type=$discountType, value=$discountValue, amount=\$${discountAmount.toStringAsFixed(2)}');
       }
 
       setState(() {
@@ -439,13 +342,7 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       });
 
       _calculateTotal();
-      print(
-          'Loaded ${_lines.length} items for transaction ${_currentTransaction!.transactionNumber}');
-      print(
-          'Transaction total: \$${_currentTransaction!.total.toStringAsFixed(2)}');
-      print('Discount: \$${_currentTransaction!.discount.toStringAsFixed(2)}');
     } catch (e) {
-      print('Error loading existing transaction data: $e');
       setState(() {
         _isLoadingExistingData = false;
       });
@@ -458,17 +355,12 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       // Fetch all categories from Firebase
       final categories = await ManagementService.getCategories();
 
-      print('Loaded ${categories.length} categories from Firebase');
-      categories
-          .forEach((cat) => print('Category: ${cat.name} (ID: ${cat.id})'));
-
       setState(() {
         _categories.clear();
         _categories.addAll(categories);
         _isLoadingCategories = false;
       });
     } catch (e) {
-      print('Error loading categories: $e');
       setState(() {
         _isLoadingCategories = false;
         // Fallback to empty list - user can still use 'All' category
@@ -481,17 +373,12 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       // Fetch all items from Firebase
       final items = await ManagementService.getItems();
 
-      print('Loaded ${items.length} items from Firebase');
-      items.forEach((item) =>
-          print('Item: ${item.name} (Category ID: ${item.categoryId})'));
-
       setState(() {
         _items.clear();
         _items.addAll(items);
         _isLoadingItems = false;
       });
     } catch (e) {
-      print('Error loading items: $e');
       setState(() {
         _isLoadingItems = false;
         // Fallback to sample items if Firebase fails
@@ -554,10 +441,8 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         try {
           await ManagementService.removeTransactionLine(
               _currentTransaction!.id, line.id);
-          print(
-              'Removed transaction line from backend (quantity 0): ${line.itemName}');
         } catch (e) {
-          print('Error removing transaction line from backend: $e');
+          // Error removing transaction line from backend
         }
       }
       return;
@@ -581,7 +466,7 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     try {
       await ManagementService.addTransactionLine(updatedLine);
     } catch (e) {
-      print('Error saving updated transaction line: $e');
+      // Error saving updated transaction line
     }
   }
 
@@ -800,9 +685,6 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         : _items
             .where((item) => item.categoryId == _selectedCategoryId)
             .toList();
-
-    print(
-        'Filtering items: ${_items.length} total, ${filteredItems.length} filtered for category $_selectedCategoryId');
 
     // Group filtered items by category
     Map<String, List<Item>> itemsByCategoryId = {};
@@ -1620,7 +1502,7 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       try {
         await ManagementService.addTransactionLine(updatedLine);
       } catch (e) {
-        print('Error saving updated transaction line: $e');
+        // Error saving updated transaction line
       }
     } else {
       // Add new item with specified technician
@@ -1648,7 +1530,7 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       try {
         await ManagementService.addTransactionLine(line);
       } catch (e) {
-        print('Error saving new transaction line: $e');
+        // Error saving new transaction line
       }
     }
   }
@@ -1716,30 +1598,18 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
   }
 
   void _removeItem(TransactionLine line) async {
-    print('_removeItem called for: ${line.id} - ${line.itemName}');
-    print('Lines before removal: ${_lines.length}');
-    for (int i = 0; i < _lines.length; i++) {
-      print('  Line ${i + 1}: ${_lines[i].id} - ${_lines[i].itemName}');
-    }
-
     setState(() {
       _lines.removeWhere((l) => l.id == line.id);
       _calculateTotal();
     });
-
-    print('Lines after removal: ${_lines.length}');
-    for (int i = 0; i < _lines.length; i++) {
-      print('  Line ${i + 1}: ${_lines[i].id} - ${_lines[i].itemName}');
-    }
 
     // Remove the line from backend cache
     if (_currentTransaction != null) {
       try {
         await ManagementService.removeTransactionLine(
             _currentTransaction!.id, line.id);
-        print('Removed transaction line from backend: ${line.itemName}');
       } catch (e) {
-        print('Error removing transaction line from backend: $e');
+        // Error removing transaction line from backend
       }
     }
   }
@@ -1765,29 +1635,11 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
         updatedAt: DateTime.now(),
       );
 
-      print('Saving transaction with:');
-      print('  Transaction ID: ${updatedTransaction.id}');
-      print('  Transaction Number: ${updatedTransaction.transactionNumber}');
-      print('  Subtotal: \$${_totalAmount.toStringAsFixed(2)}');
-      print('  Discount: \$${_discountAmount.toStringAsFixed(2)}');
-      print(
-          '  Total: \$${(_totalAmount - _discountAmount).toStringAsFixed(2)}');
-      print('  Payments count: ${_payments.length}');
-      for (int i = 0; i < _payments.length; i++) {
-        final payment = _payments[i];
-        print(
-            '    Payment ${i + 1}: ${payment.methodName} - ${payment.formattedAmount}');
-      }
-      print('  Discount Type: $_discountType, Value: $_discountValue');
-
       // Save each payment individually to ensure they persist
       for (final payment in _payments) {
         try {
           await ManagementService.savePayment(payment);
-          print(
-              'Saved payment: ${payment.methodName} - ${payment.formattedAmount}');
         } catch (e) {
-          print('Error saving payment ${payment.id}: $e');
           // Continue with other payments even if one fails
         }
       }
@@ -1795,19 +1647,10 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
       // Sync all current transaction lines to ensure deleted ones are not restored
       if (_currentTransaction != null) {
         try {
-          print(
-              'About to sync transaction lines for ${_currentTransaction!.id}:');
-          print('  Current _lines count: ${_lines.length}');
-          for (int i = 0; i < _lines.length; i++) {
-            print('  Line ${i + 1}: ${_lines[i].id} - ${_lines[i].itemName}');
-          }
-
           await ManagementService.setTransactionLines(
               _currentTransaction!.id, _lines);
-          print(
-              'Successfully synced ${_lines.length} transaction lines to backend');
         } catch (e) {
-          print('Error syncing transaction lines: $e');
+          // Error syncing transaction lines
         }
       }
 
@@ -1826,7 +1669,6 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
 
       Navigator.pop(context);
     } catch (e) {
-      print('Error saving transaction: $e');
       // Still show success since the UI changes are preserved
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -2134,19 +1976,15 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     // Save the payment immediately to ensure persistence
     try {
       await ManagementService.savePayment(payment);
-      print(
-          'Payment saved successfully: ${payment.methodName} - ${payment.formattedAmount}');
     } catch (e) {
-      print('Error saving payment: $e');
       // Continue anyway - the payment is in local state and will be saved with transaction
     }
 
     // Also save the updated transaction to cache
     try {
       await ManagementService.updateTransaction(_currentTransaction!);
-      print('Updated transaction with new payment');
     } catch (e) {
-      print('Error updating transaction with new payment: $e');
+      // Error updating transaction with new payment
     }
 
     _calculateTotal();
@@ -2170,19 +2008,15 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     // Delete the payment from the service
     try {
       await ManagementService.deletePayment(payment.id);
-      print(
-          'Payment deleted successfully: ${payment.methodName} - ${payment.formattedAmount}');
     } catch (e) {
-      print('Error deleting payment: $e');
       // Continue anyway - the payment is removed from local state
     }
 
     // Also save the updated transaction to cache
     try {
       await ManagementService.updateTransaction(_currentTransaction!);
-      print('Updated transaction after removing payment');
     } catch (e) {
-      print('Error updating transaction after removing payment: $e');
+      // Error updating transaction after removing payment
     }
 
     _calculateTotal();
@@ -2205,10 +2039,7 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     for (final payment in paymentsToDelete) {
       try {
         await ManagementService.deletePayment(payment.id);
-        print(
-            'Payment cleared: ${payment.methodName} - ${payment.formattedAmount}');
       } catch (e) {
-        print('Error clearing payment: $e');
         // Continue with other payments
       }
     }
@@ -2216,9 +2047,8 @@ class _SimpleTransactionScreenState extends State<SimpleTransactionScreen> {
     // Also save the updated transaction to cache
     try {
       await ManagementService.updateTransaction(_currentTransaction!);
-      print('Updated transaction after clearing all payments');
     } catch (e) {
-      print('Error updating transaction after clearing all payments: $e');
+      // Error updating transaction after clearing all payments
     }
 
     _calculateTotal();
